@@ -1,5 +1,5 @@
 import type { Loadout } from './catalog'
-import { GEMS, GUARD_CAP, RAID_GAP, RAID_MIN_TIER, RAIDER_CAP, SHIELD_SEC, TIER_SPENT, WARN_SEC, buildById, defenseById, rockById, starterLoad, treeById } from './catalog'
+import { GEMS, GUARD_CAP, HIDES, RAID_GAP, RAID_MIN_TIER, RAIDER_CAP, SHIELD_SEC, TIER_SPENT, WARN_SEC, buildById, defenseById, rockById, starterLoad, treeById } from './catalog'
 import { digTick, fullColumn, tubeColumn, ventColumn, type Column } from './dig'
 import { bodyBox, mouthHit } from './body'
 import { WATER, WORLD_Z, carve, fill, groundAt } from './terrain'
@@ -285,18 +285,50 @@ export function createWorld(): World {
   const nodes: [Node['kind'], string, number][] = [
     ['mat', 'kelp', 14],
     ['mat', 'kelp', 26],
+    ['tree', 'driftwood', 22],
+    ['tree', 'mangrove', 32],
+    ['rock', 'chalk', 36],
+    ['rock', 'coral-rock', 44],
+    ['tree', 'cypress', 48],
+    ['rock', 'pumice', 62],
+    ['rock', 'sandstone', 70],
+    ['rock', 'limestone', 74],
     ['mat', 'sticks', 78],
+    ['tree', 'birch', 82],
+    ['tree', 'willow', 86],
     ['mat', 'mud', 88],
-    ['mat', 'vines', 96],
-    ['mat', 'resin', 108],
+    ['tree', 'bamboo', 90],
     ['tree', 'palm', 94],
-    ['tree', 'oak', 110],
+    ['mat', 'vines', 96],
+    ['tree', 'ferntree', 98],
+    ['rock', 'shale', 100],
+    ['tree', 'cycad', 102],
     ['rock', 'granite', 104],
+    ['tree', 'ginkgo', 106],
+    ['mat', 'resin', 108],
+    ['tree', 'oak', 110],
+    ['tree', 'pine', 114],
+    ['rock', 'slate', 118],
     ['rock', 'flint', 122],
-    ['tree', 'bloodwood', 174],
-    ['rock', 'lavarock', 180],
-    ['rock', 'obsidian', 188],
+    ['tree', 'cedar', 126],
+    ['rock', 'marble', 128],
+    ['tree', 'kapok', 134],
+    ['rock', 'quartz', 136],
+    ['tree', 'baobab', 140],
+    ['rock', 'copper', 144],
+    ['tree', 'redwood', 148],
+    ['tree', 'ironwood', 154],
+    ['tree', 'ebony', 160],
+    ['rock', 'basalt', 166],
     ['rock', 'geode', 170],
+    ['rock', 'jade-rock', 172],
+    ['tree', 'bloodwood', 174],
+    ['rock', 'iron', 176],
+    ['rock', 'lavarock', 180],
+    ['tree', 'petrified', 182],
+    ['rock', 'goldrock', 186],
+    ['rock', 'obsidian', 188],
+    ['rock', 'deep-stone', 196],
   ]
   for (const [kind, mat, x] of nodes) w.nodes.push({ id: w.nextId++, kind, mat, x, amount: 3, hp: kind === 'mat' ? 1 : 10 })
   return w
@@ -601,6 +633,7 @@ function digAt(w: World, you: Ent, dt: number, ev: Evt[]): void {
   if (tick.cell) {
     ev.push({ t: 'dig', x: col.x, y: you.y, text: tick.deep ? 'Deep stone splits' : 'A layer falls' })
     w.debris.push({ x: col.x + (you.id % 3) * 0.2, y: you.y + 1.4, vy: 0.4, life: 1.6, dmg: 0 })
+    carve(col.x, you.y - 0.4, you.z, 2.1, 1.15)
   }
   if (tick.deep) dropGem(you, 'deep-stone', ev, w)
   if (tick.trap) armTrap(w, you, tick.trap, col.x, ev)
@@ -618,7 +651,7 @@ function useNode(w: World, you: Ent, ev: Evt[]): void {
   if (node.kind === 'tree') {
     const secs = chopSeconds(you.load, you.spent, node.mat)
     if (secs === null) {
-      ev.push({ t: 'note', x: you.x, y: you.y, text: 'Wood cutting unlocks at tier 4' })
+      ev.push({ t: 'note', x: you.x, y: you.y, text: 'Need a cutting jaw, teeth, or a cutter for this wood' })
       return
     }
     node.hp -= 12 / secs
@@ -631,7 +664,7 @@ function useNode(w: World, you: Ent, ev: Evt[]): void {
   }
   const secs = cellSeconds(you.load, you.spent, node.mat)
   if (secs === null) {
-    ev.push({ t: 'note', x: you.x, y: you.y, text: 'Rock breaking unlocks at tier 4' })
+    ev.push({ t: 'note', x: you.x, y: you.y, text: 'Need a horn, crushing jaw, spade, or breaker for this rock' })
     return
   }
   node.hp -= 8 / secs
@@ -640,6 +673,7 @@ function useNode(w: World, you: Ent, ev: Evt[]): void {
     node.amount = 0
     dropGem(you, node.mat, ev, w)
     ev.push({ t: 'mine', x: node.x, y: 1, text: rockById(node.mat)?.name ?? node.mat })
+    carve(node.x, you.y - 0.2, you.z, 1.6, 1)
   }
 }
 
@@ -742,7 +776,12 @@ function rewardKill(w: World, you: Ent, foe: Ent, ev: Evt[]): void {
 }
 
 function HIDEfor(foe: Ent): string {
-  return foe.region === 'sea' ? 'shark' : foe.bias > 20 ? 'platehide' : 'leather'
+  const biome = foe.region === 'sea' ? 'sea' : 'land'
+  const band =
+    foe.kind === 'boss' ? 5 : foe.region === 'volcano' ? 4 : foe.bias > 30 ? 3 : foe.bias > 10 ? 2 : foe.bias > 2 ? 1 : 0
+  const matches = HIDES.filter((h) => h.biome === biome && h.band === band)
+  const pool = matches.length ? matches : HIDES.filter((h) => h.biome === biome)
+  return pool[foe.id % Math.max(1, pool.length)]?.id ?? (biome === 'sea' ? 'shark' : 'leather')
 }
 
 function autoEvolve(e: Ent): void {
@@ -1073,4 +1112,49 @@ export function upgradeDefense(w: World, uid: number): Buy {
     return { ok: true, reason: `Mk ${def.mk}` }
   }
   return { ok: false, reason: 'No such tower' }
+}
+
+export function snapshotWorld(w: World): { columns: { x: number; dug: number; prog: number }[]; nodes: { id: number; mat: string; amount: number; hp: number }[]; bases: Base[] } {
+  return {
+    columns: w.columns.map((c) => ({ x: c.x, dug: c.dug, prog: c.prog })),
+    nodes: w.nodes.map((n) => ({ id: n.id, mat: n.mat, amount: n.amount, hp: n.hp })),
+    bases: w.bases.map((b) => ({ ...b, defs: b.defs.map((d) => ({ ...d })) })),
+  }
+}
+
+export function applyWorldSnapshot(w: World, data: { columns?: { x: number; dug: number; prog: number }[]; nodes?: { id: number; mat: string; amount: number; hp: number }[]; bases?: Base[] }): void {
+  if (data.columns) {
+    for (const saved of data.columns) {
+      const col = w.columns.find((c) => c.x === saved.x)
+      if (!col || !Number.isFinite(saved.dug)) continue
+      col.dug = Math.max(0, Math.min(24, saved.dug))
+      col.prog = Math.max(0, Math.min(1, saved.prog || 0))
+    }
+  }
+  if (data.nodes) {
+    for (const saved of data.nodes) {
+      const node = w.nodes.find((n) => n.mat === saved.mat && n.id === saved.id) ?? w.nodes.find((n) => n.mat === saved.mat)
+      if (!node || !Number.isFinite(saved.amount)) continue
+      node.amount = Math.max(0, saved.amount)
+      if (Number.isFinite(saved.hp)) node.hp = Math.max(0, saved.hp)
+    }
+  }
+  if (data.bases) {
+    for (const saved of data.bases) {
+      if (!saved || typeof saved.id !== 'number') continue
+      const existing = w.bases.find((b) => b.id === saved.id)
+      if (existing) {
+        if (Number.isFinite(saved.hp)) existing.hp = saved.hp
+        if (Number.isFinite(saved.maxHp)) existing.maxHp = saved.maxHp
+        if (saved.mats) existing.mats = saved.mats
+        if (saved.gems) existing.gems = saved.gems
+        if (Array.isArray(saved.defs)) existing.defs = saved.defs
+        if (Number.isFinite(saved.tier)) existing.tier = saved.tier
+        if (Number.isFinite(saved.x)) existing.x = saved.x
+      } else if (typeof saved.name === 'string' && Number.isFinite(saved.x)) {
+        w.bases.push(saved)
+        w.nextId = Math.max(w.nextId, saved.id + 1)
+      }
+    }
+  }
 }
