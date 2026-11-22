@@ -79,3 +79,36 @@ export function terrainHeight(x: number, z: number): number {
   if (x < 168) return 1.18 + n * 0.4 + Math.sin(x * 0.045) * 0.22
   return 1.12 + Math.sin((x - 198) * 0.18) * 0.12 + n * 0.08
 }
+
+const CARVE_CAP = 8000
+
+export function exportCarves(): [string, number][] {
+  const out: [string, number][] = []
+  for (const [k, v] of carved) {
+    if (v > 0.01) out.push([k, Math.round(v * 1000) / 1000])
+    if (out.length >= CARVE_CAP) break
+  }
+  return out
+}
+
+export function importCarves(entries: unknown): void {
+  carved.clear()
+  dirtyChunks.clear()
+  if (!Array.isArray(entries)) return
+  for (const item of entries) {
+    if (!Array.isArray(item) || item.length < 2) continue
+    const k = item[0]
+    const v = item[1]
+    if (typeof k !== 'string' || typeof v !== 'number' || !Number.isFinite(v) || v <= 0.01) continue
+    if (!/^[-0-9]+\|[-0-9]+\|[-0-9]+$/.test(k)) continue
+    carved.set(k, v)
+    const [sx, , sz] = k.split('|')
+    const x = Number(sx)
+    const z = Number(sz)
+    if (Number.isFinite(x) && Number.isFinite(z)) dirtyChunks.add(chunkId(x, z))
+  }
+}
+
+export function carveCount(): number {
+  return carved.size
+}
