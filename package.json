@@ -1,0 +1,23 @@
+{
+  "name": "evo2-back-to-eden",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 43123 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 43123 --strictPort",
+    "check": "./node_modules/esbuild/bin/esbuild scripts/check.ts --bundle --platform=node --format=esm --outfile=/tmp/evo-check.mjs && node /tmp/evo-check.mjs",
+    "icons": "node scripts/make-icons.mjs"
+  },
+  "dependencies": {
+    "@fontsource/silkscreen": "5.2.8",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.170.0",
+    "typescript": "5.9.3",
+    "vite": "6.4.6",
+    "vite-plugin-pwa": "1.2.0"
+  }
+}

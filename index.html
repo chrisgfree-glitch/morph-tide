@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#102028" />
+    <meta name="description" content="EVO 2.0: Back to Eden — grow a body from the ancient sea to the first shore." />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>EVO 2.0: Back to Eden</title>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="title">
+      <p class="kicker">A lineage fable</p>
+      <h1>EVO 2.0</h1>
+      <p class="sub">Back to Eden</p>
+      <label>Name <input id="name" maxlength="16" value="Tidewisp" /></label>
+      <div id="colors" class="swatches"></div>
+      <button id="solo" type="button">Begin in the shallows</button>
+      <button id="online" type="button">Enter the living world</button>
+      <p id="title-msg"></p>
+      <p class="help">WASD to swim. W rises. Click to bite. E evolve, F dig, G gather.</p>
+    </div>
+    <div id="rotate">
+      <p class="turn">Rotate your phone</p>
+      <p>The shore runs left to right. Turn sideways to play.</p>
+    </div>
+    <div id="hud" hidden>
+      <span id="hp"></span>
+      <span id="tier"></span>
+      <span id="ep"></span>
+      <div id="corner">
+        <button id="quality" type="button">Detail</button>
+        <button id="full" type="button">Full</button>
+        <button id="t-pause" type="button">Pause</button>
+        <button id="t-evo" type="button">Evolve</button>
+      </div>
+      <p id="banner"></p>
+      <p id="hint" hidden></p>
+    </div>
+    <div id="evo" class="panel" hidden>
+      <header><h2>Evolve</h2><span id="evo-ep"></span><button id="evo-close" type="button">Close</button></header>
+      <div id="evo-body"></div>
+    </div>
+    <div id="build" class="panel" hidden>
+      <header><h2>Build</h2><button id="build-close" type="button">Close</button></header>
+      <div id="build-body"></div>
+    </div>
+    <div id="overlay" hidden>
+      <p id="overlay-text"></p>
+      <button id="resume" type="button">Continue</button>
+    </div>
+    <div id="touch" hidden>
+      <div id="stick" class="stick"><div id="knob"></div></div>
+      <div id="arc">
+        <button id="t-dash" class="orb" type="button" aria-label="Dash">
+          <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5"></circle></svg>
+          <svg class="ico" viewBox="0 0 24 24"><path d="M4 12h10M12 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        </button>
+        <button id="t-horn" class="orb" type="button" aria-label="Tail or horn">
+          <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5"></circle></svg>
+          <svg class="ico" viewBox="0 0 24 24"><path d="M5 18c4-1 6-6 7-14 3 6 6 9 9 10-4 1-8 1-12 4z" fill="currentColor"/></svg>
+        </button>
+        <button id="t-act" class="orb" type="button" aria-label="Dig">
+          <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5"></circle></svg>
+          <svg class="ico" viewBox="0 0 24 24"><path d="M4 18h16M7 18V9l5-4 5 4v9" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          <span id="t-act-lbl">Dig</span>
+        </button>
+        <button id="t-build" class="orb" type="button" aria-label="Build">
+          <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5"></circle></svg>
+          <svg class="ico" viewBox="0 0 24 24"><path d="M4 20V10l8-6 8 6v10H4z" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        </button>
+        <button id="t-bite" class="primary" type="button" aria-label="Bite">
+          <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5"></circle></svg>
+          <svg class="ico" viewBox="0 0 24 24"><path d="M3 14c2 4 5 6 9 6s7-2 9-6c-2 1-4 1-6-1-1 2-3 3-3 3s-2-1-3-3c-2 2-4 2-6 1z" fill="currentColor"/></svg>
+        </button>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
