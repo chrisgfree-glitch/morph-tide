@@ -39,7 +39,7 @@ h1 { font-size: 64px; margin: 0; letter-spacing: 0.04em; }
 .name { display: block; margin-bottom: 4px; }
 #name { width: min(280px, 80vw); }
 button, input { font-family: inherit; font-size: 16px; }
-button { background: #243830; color: #e7e0d4; border: 2px solid #d7cbb8; padding: 8px 12px; margin: 4px; }
+button { background: #243830; color: #f3eee4; border: 2px solid #e7e0d4; padding: 10px 12px; margin: 4px; min-height: 44px; }
 button:disabled { opacity: 0.45; }
 #solo {
   display: grid;
@@ -60,7 +60,7 @@ button:disabled { opacity: 0.45; }
   display: block;
   font-size: 12px;
   font-weight: normal;
-  color: #b8aea0;
+  color: #ece6da;
   letter-spacing: 0;
 }
 input { background: #1a2a30; color: #e7e0d4; border: 2px solid #d7cbb8; padding: 8px; }
@@ -71,11 +71,11 @@ input { background: #1a2a30; color: #e7e0d4; border: 2px solid #d7cbb8; padding:
   left: calc(8px + env(safe-area-inset-left));
   right: calc(8px + env(safe-area-inset-right));
   display: flex; gap: 8px 12px; align-items: center; z-index: 4;
-  font-size: 13px; text-shadow: 0 2px 0 #102028; pointer-events: none;
+  font-size: 14px; color: #f3eee4; text-shadow: 0 1px 0 #102028, 0 0 4px #102028; pointer-events: none;
 }
 #hud span { white-space: nowrap; }
 #corner { margin-left: auto; display: flex; gap: 6px; pointer-events: auto; }
-#corner button { margin: 0; padding: 4px 8px; font-size: 12px; }
+#corner button { margin: 0; padding: 10px 12px; font-size: 14px; min-width: 44px; min-height: 44px; }
 #map { top: 8px; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: none; overflow: auto; }
 #map-canvas { width: 100%; height: 200px; display: block; background: #143840; }
 #pad-prompt {
@@ -87,7 +87,7 @@ input { background: #1a2a30; color: #e7e0d4; border: 2px solid #d7cbb8; padding:
   position: absolute; top: 28px; left: 8px; max-width: 46%;
   margin: 0; font-size: 12px; line-height: 1.3; pointer-events: none;
 }
-#grow { position: absolute; top: 52px; left: 8px; margin: 0; padding: 4px 8px; font-size: 12px; pointer-events: auto; z-index: 5; }
+#grow { position: absolute; top: 52px; left: 8px; margin: 0; padding: 10px 12px; font-size: 14px; min-height: 44px; pointer-events: auto; z-index: 5; }
 #banner {
   position: absolute; top: 78px; left: 18%; right: 28%; text-align: center;
   color: #d7c4a2; pointer-events: none; font-size: 12px;
@@ -166,7 +166,7 @@ input { background: #1a2a30; color: #e7e0d4; border: 2px solid #d7cbb8; padding:
 .ring circle { fill: none; stroke: #e4d6c2; stroke-width: 2.4; stroke-dasharray: 97.4; stroke-dashoffset: 0; }
 .ico { width: 22px; height: 22px; }
 .primary .ico { width: 36px; height: 36px; }
-#t-act-lbl { position: absolute; bottom: 4px; font-size: 8px; letter-spacing: 0; }
+#t-act-lbl { position: absolute; bottom: 4px; font-size: 11px; letter-spacing: 0; color: #f2ebe0; }
 #t-up, #t-dive, #t-act, #t-dash, #t-horn, #t-build { display: none; }
 #t-bite { right: 10px; bottom: 10px; width: 86px; height: 86px; }
 
@@ -193,7 +193,7 @@ input { background: #1a2a30; color: #e7e0d4; border: 2px solid #d7cbb8; padding:
   #t-act { right: 138px; bottom: 6px; }
   #arc { width: 200px; height: 130px; right: 6px; bottom: 6px; }
   #goal { max-width: 42%; font-size: 11px; }
-  #grow { top: 48px; font-size: 11px; }
+  #grow { top: 48px; font-size: 13px; min-height: 44px; }
   h1 { font-size: 40px; }
 }
 @media (max-width: 720px) {
