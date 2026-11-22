@@ -43,3 +43,31 @@ Water and terrain shaders already included `<tonemapping_fragment>` and
   only partly expressed by `groundAt`.
 - Persistence is local to one browser profile, capped at 8000 carve cells.
 - Phone and desktop smoke tests are recorded after the preview deploy.
+
+## Preview deploy
+
+A preview deploy was attempted with the Vercel CLI (`npx vercel --yes`, no
+`--prod`). `VERCEL_TOKEN` is present in the environment, but `vercel whoami`
+and the deploy both returned `User not found`. Production was not promoted.
+There is no preview URL from this pass.
+
+## Local smoke (2026-11-22, America/Los_Angeles, afternoon)
+
+`npm run check` and `npm run build` passed. Playwright (system Chrome +
+SwiftShader) ran against a local `vite preview` at http://127.0.0.1:43123/:
+
+- Desktop 1280×800: title, Solo start, WebGL canvas, HUD, no page errors.
+  Screenshot: `/workspace/morph-tide-3d/smoke/desktop.png`.
+- Phone portrait 390×844: start works; the existing rotate-to-landscape
+  prompt covers play, as designed. Screenshot: `smoke/phone.png`.
+- Phone landscape 844×390: start works; stick, Attack, Rise, Dive, Dig, and
+  other orbs are visible and at least 44 CSS px. Screenshot:
+  `smoke/phone-land.png`.
+
+Not verified on a physical phone, and not verified: actual dig/cut/break
+feel in a long play session, save/reload of a dug tunnel, or contrast
+measurement with a WCAG meter (sizes and colors were checked in CSS and
+bounding boxes).
+
+Known visual issue: the first-run help banner overlaps the Grow button and
+part of the HP line, especially in landscape.

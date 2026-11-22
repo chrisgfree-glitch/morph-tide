@@ -167,7 +167,6 @@ input { background: #1a2a30; color: #e7e0d4; border: 2px solid #d7cbb8; padding:
 .ico { width: 22px; height: 22px; }
 .primary .ico { width: 36px; height: 36px; }
 #t-act-lbl { position: absolute; bottom: 4px; font-size: 11px; letter-spacing: 0; color: #f2ebe0; }
-#t-up, #t-dive, #t-act, #t-dash, #t-horn, #t-build { display: none; }
 #t-bite { right: 10px; bottom: 10px; width: 86px; height: 86px; }
 
 @media (max-height: 420px) {
@@ -186,7 +185,6 @@ input { background: #1a2a30; color: #e7e0d4; border: 2px solid #d7cbb8; padding:
   .primary { width: 68px; height: 68px; }
   .orb { width: 48px; height: 48px; }
   .word { width: 54px; height: 54px; }
-  #t-dash, #t-horn, #t-build, #t-up, #t-dive, #t-act { display: none; }
   #t-bite { right: 8px; bottom: 8px; width: 76px; height: 76px; }
   #t-dive { right: 76px; bottom: 6px; }
   #t-up { right: 76px; bottom: 66px; }
