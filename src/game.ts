@@ -42,6 +42,7 @@ export class Game {
   private hornT = 0
   private actHeld = false
   private cd = { dash: 0, horn: 0, act: 0, build: 0 }
+  private punch = { t: 1, dur: 0.22, amp: 0, ax: 1, ay: 0.35 }
 
   constructor(canvas: HTMLCanvasElement) {
     this.world = createWorld()
@@ -484,7 +485,8 @@ export class Game {
         const result = tryPurchase(you, kind, id)
         this.world.banner = result.reason
         this.world.bannerT = 2
-        audio.blip(result.ok ? 'eat' : 'hurt')
+        if (result.ok) this.feel('evolve')
+        else audio.blip('hurt')
         this.keysigs.delete(you.id)
         this.renderEvo()
         this.save()
@@ -510,6 +512,50 @@ export class Game {
         audio.blip(result.ok ? 'dig' : 'hurt')
       }),
     )
+  }
+
+  private feel(kind: string): void {
+    audio.blip(kind)
+    if (kind === 'hit' || kind === 'bite') {
+      this.kickCam(0.1)
+      navigator.vibrate?.(25)
+    } else if (kind === 'eat' || kind === 'gem' || kind === 'chop' || kind === 'dig' || kind === 'mine') {
+      this.kickCam(0.08, 0.7, 0.5)
+      navigator.vibrate?.(30)
+    } else if (kind === 'evolve') {
+      this.kickCam(0.16, 0.45, 0.85)
+      navigator.vibrate?.(45)
+    } else if (kind === 'hurt' || kind === 'trap' || kind === 'geyser') {
+      this.kickCam(0.2)
+      navigator.vibrate?.(80)
+    } else if (kind === 'warn' || kind === 'alert' || kind === 'wave') {
+      this.kickCam(0.12)
+      navigator.vibrate?.(80)
+    }
+  }
+
+  private kickCam(amp: number, ax = 1, ay = 0.35): void {
+    const leftover = this.punch.t < this.punch.dur ? this.punch.amp : 0
+    this.punch.t = 0
+    this.punch.dur = 0.22
+    this.punch.amp = Math.max(amp, leftover)
+    this.punch.ax = ax
+    this.punch.ay = ay
+  }
+
+  private applyCamFeel(dt: number): void {
+    if (this.punch.t < this.punch.dur) {
+      const u = Math.min(1, this.punch.t / this.punch.dur)
+      const wave = Math.sin(Math.PI * u) * (1 - u)
+      this.camera.position.x += wave * this.punch.amp * this.punch.ax
+      this.camera.position.y += wave * this.punch.amp * this.punch.ay
+      this.punch.t += dt
+    }
+    if (this.world.shake > 0) {
+      const a = Math.min(0.1, this.world.shake * 0.28)
+      this.camera.position.x += Math.sin(this.time * 8) * a
+      this.camera.position.y += Math.cos(this.time * 6.2) * a * 0.35
+    }
   }
 
   private gather(dt: number): Frame {
@@ -568,8 +614,7 @@ export class Game {
     this.waterU.value = this.time
     if (this.playing && !this.paused && !this.evoOpen && !this.buildOpen && !this.world.over) {
       const ev = step(this.world, dt, this.gather(dt))
-      for (const e of ev) if (e.t !== 'note') audio.blip(e.t)
-      if (ev.some((e) => e.t === 'warn')) navigator.vibrate?.(80)
+      for (const e of ev) if (e.t !== 'note') this.feel(e.t)
     }
     this.sync()
     const you = playerOf(this.world)
@@ -595,7 +640,7 @@ export class Game {
     this.camPos.lerp(this.camGoal, ck)
     this.lookPos.lerp(this.lookGoal, 1 - Math.exp(-dt * 3.2))
     this.camera.position.copy(this.camPos)
-    if (this.world.shake > 0) this.camera.position.x += Math.sin(this.time * 40) * 0.12
+    this.applyCamFeel(dt)
     this.camera.lookAt(this.lookPos)
     this.sun.position.set(you.x - 10, 18, 12)
     this.sun.target.position.set(you.x, 1, 0)
