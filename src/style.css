@@ -1,0 +1,203 @@
+html, body { margin: 0; height: 100%; background: #102028; color: #e7e0d4; font-family: Silkscreen, monospace; }
+html, body, button, #title, .panel, #overlay, #rotate, #hud, #hint {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+canvas, #hud, #touch, #look, #stick, #knob, #arc, #t-bite, #t-up, #t-dive, #t-dash, #t-horn, #t-act, #t-build {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+button, #title, .panel, #overlay, #corner, input {
+  touch-action: manipulation;
+}
+input {
+  -webkit-user-select: text;
+  user-select: text;
+}
+body { overflow: hidden; }
+canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#title, .panel, #overlay {
+  position: absolute; z-index: 6; background: rgba(12, 24, 28, 0.9); color: #e7e0d4;
+  pointer-events: none;
+}
+#title:not([hidden]), .panel:not([hidden]), #overlay:not([hidden]) { pointer-events: auto; }
+#title { inset: 0; display: grid; place-content: center; text-align: center; gap: 10px; padding: 24px; }
+#title[hidden], [hidden] { display: none !important; }
+h1 { font-size: 64px; margin: 0; letter-spacing: 0.04em; }
+.mark { margin: 0; line-height: 0; }
+.mark svg { width: min(460px, 88vw); height: auto; display: block; margin: 0 auto; }
+.kicker, .help, .goal, .path, #title-msg { color: #d4c4a4; }
+.goal, .path { max-width: 34rem; margin: 4px auto; line-height: 1.45; }
+.path { color: #d7c4a2; }
+.help { max-width: 40rem; margin: 0 auto; font-size: 13px; line-height: 1.4; text-align: left; }
+.help p { margin: 0 0 4px; }
+.name { display: block; margin-bottom: 4px; }
+#name { width: min(280px, 80vw); }
+button, input { font-family: inherit; font-size: 16px; }
+button { background: #243830; color: #e7e0d4; border: 2px solid #d7cbb8; padding: 8px 12px; margin: 4px; }
+button:disabled { opacity: 0.45; }
+#solo {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  width: min(360px, 86vw);
+  margin: 8px auto 4px;
+  padding: 14px 22px 12px;
+  font-size: 20px;
+  line-height: 1.2;
+  cursor: pointer;
+  background: #2f5648;
+  border: 3px solid #e7e0d4;
+  box-shadow: 0 4px 0 #102028;
+}
+#solo .solo-label { display: block; letter-spacing: 0.02em; }
+#solo .solo-sub {
+  display: block;
+  font-size: 12px;
+  font-weight: normal;
+  color: #b8aea0;
+  letter-spacing: 0;
+}
+input { background: #1a2a30; color: #e7e0d4; border: 2px solid #d7cbb8; padding: 8px; }
+.swatches button { width: 92px; }
+#hud {
+  position: absolute;
+  top: calc(6px + env(safe-area-inset-top));
+  left: calc(8px + env(safe-area-inset-left));
+  right: calc(8px + env(safe-area-inset-right));
+  display: flex; gap: 8px 12px; align-items: center; z-index: 4;
+  font-size: 13px; text-shadow: 0 2px 0 #102028; pointer-events: none;
+}
+#hud span { white-space: nowrap; }
+#corner { margin-left: auto; display: flex; gap: 6px; pointer-events: auto; }
+#corner button { margin: 0; padding: 4px 8px; font-size: 12px; }
+#map { top: 8px; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: none; overflow: auto; }
+#map-canvas { width: 100%; height: 200px; display: block; background: #143840; }
+#pad-prompt {
+  position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 8;
+  background: #102028; color: #e7e0d4; border: 2px solid #d7cbb8; padding: 4px 8px; pointer-events: none;
+}
+.pad-focus { outline: 2px solid #e7e0d4; outline-offset: 2px; }
+#goal {
+  position: absolute; top: 28px; left: 8px; max-width: 46%;
+  margin: 0; font-size: 12px; line-height: 1.3; pointer-events: none;
+}
+#grow { position: absolute; top: 52px; left: 8px; margin: 0; padding: 4px 8px; font-size: 12px; pointer-events: auto; z-index: 5; }
+#banner {
+  position: absolute; top: 78px; left: 18%; right: 28%; text-align: center;
+  color: #d7c4a2; pointer-events: none; font-size: 12px;
+}
+#settings {
+  top: 8px; right: 8px; bottom: 8px; width: min(360px, 78vw);
+  max-height: none; overflow: auto; padding: 8px;
+}
+#settings .path, #settings .help { max-width: none; text-align: left; margin: 0 0 8px; font-size: 12px; }
+#settings .help p { margin: 0 0 3px; }
+.pop {
+  position: fixed; z-index: 5; pointer-events: none; color: #e7d3c4;
+  font-size: 14px; text-shadow: 0 1px 0 #102028;
+}
+#hint {
+  position: absolute; top: 52px; left: 22%; right: 22%; text-align: center;
+  color: #e7e0d4; background: rgba(16, 32, 40, 0.72); padding: 4px 8px; margin: 0; font-size: 12px;
+  pointer-events: none;
+}
+#rotate {
+  display: none; pointer-events: none; position: fixed; inset: 0; z-index: 9;
+  place-content: center; text-align: center; gap: 8px; padding: 24px;
+  background: rgba(12, 22, 26, 0.94); color: #e7e0d4;
+}
+#rotate.on { display: grid; pointer-events: none; }
+#rotate .turn { font-size: 28px; margin: 0; color: #d7cbb8; }
+.panel { top: 24px; right: 24px; width: min(420px, 92vw); max-height: 86vh; overflow: auto; padding: 12px; border: 3px solid #d7cbb8; }
+.panel h3 { color: #d4c4a4; font-size: 16px; }
+#evo-preview { width: 100%; height: 150px; display: block; background: #143840; border-radius: 8px; margin: 0 0 8px; }
+.panel button { display: block; width: 100%; text-align: left; }
+#overlay { inset: 0; display: grid; place-content: center; text-align: center; gap: 8px; padding: 24px; }
+#overlay h2 { margin: 0; font-size: 28px; }
+#settings label { display: grid; gap: 6px; margin: 10px 0; text-align: left; }
+#settings label.check { display: flex; align-items: center; gap: 8px; }
+#settings input[type='range'], #settings select { width: 100%; font-family: inherit; font-size: 16px; background: #1a2a30; color: #e7e0d4; border: 2px solid #d7cbb8; padding: 6px; }
+#look {
+  position: fixed; top: 0; right: 0; width: 58%; bottom: 0; z-index: 2;
+  touch-action: none; -webkit-user-select: none; user-select: none;
+}
+#touch {
+  position: fixed; inset: 0; z-index: 3; pointer-events: none;
+  touch-action: none;
+}
+.stick {
+  position: absolute;
+  left: calc(18px + env(safe-area-inset-left));
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  width: 112px; height: 112px; border-radius: 50%;
+  background: rgba(18, 36, 40, 0.4);
+  border: 2px solid rgba(215, 203, 184, 0.75);
+  pointer-events: auto;
+}
+#knob {
+  width: 48px; height: 48px; border-radius: 50%;
+  background: rgba(228, 216, 198, 0.92);
+  position: absolute; left: 32px; top: 32px;
+}
+#arc { position: absolute; right: calc(10px + env(safe-area-inset-right)); bottom: calc(8px + env(safe-area-inset-bottom)); width: 196px; height: 188px; }
+.orb, .primary {
+  position: absolute; margin: 0; border-radius: 50%; padding: 0;
+  display: grid; place-items: center; pointer-events: auto;
+  background: rgba(28, 48, 42, 0.82);
+}
+.orb { width: 52px; height: 52px; }
+.primary { width: 92px; height: 92px; right: 0; bottom: 0; background: rgba(58, 42, 34, 0.9); }
+.word { width: 64px; height: 64px; font-size: 12px; }
+#t-dash { right: 104px; bottom: 6px; }
+#t-act { right: 132px; bottom: 68px; }
+#t-horn { right: 92px; bottom: 124px; }
+#t-build { right: 22px; bottom: 128px; }
+#t-up { right: 8px; bottom: 188px; }
+#t-dive { right: 78px; bottom: 188px; }
+.lbl { position: absolute; bottom: 4px; font-size: 10px; letter-spacing: 0; line-height: 1; }
+.word .lbl { position: static; font-size: 12px; }
+.ring { position: absolute; inset: -3px; width: calc(100% + 6px); height: calc(100% + 6px); transform: rotate(-90deg); pointer-events: none; }
+.ring circle { fill: none; stroke: #e4d6c2; stroke-width: 2.4; stroke-dasharray: 97.4; stroke-dashoffset: 0; }
+.ico { width: 22px; height: 22px; }
+.primary .ico { width: 36px; height: 36px; }
+#t-act-lbl { position: absolute; bottom: 4px; font-size: 8px; letter-spacing: 0; }
+#t-up, #t-dive, #t-act, #t-dash, #t-horn, #t-build { display: none; }
+#t-bite { right: 10px; bottom: 10px; width: 86px; height: 86px; }
+
+@media (max-height: 420px) {
+  #title { gap: 4px; padding: 6px 12px; overflow: auto; }
+  .kicker { display: none; }
+  .mark svg { width: min(240px, 62vw); }
+  .goal, .path, .help { font-size: 11px; margin: 0 auto; }
+  #solo { font-size: 16px; padding: 10px 14px 8px; margin: 4px auto; width: min(320px, 80vw); }
+  #solo .solo-sub { font-size: 11px; }
+  .swatches button { width: 64px; margin: 2px; padding: 4px; font-size: 10px; }
+  #settings { top: 4px; bottom: 16px; max-height: none; padding: 6px; }
+  #settings label { margin: 2px 0; gap: 2px; }
+  #settings button, #settings select, #settings input { margin: 1px 0; padding: 3px 8px; }
+  .stick { width: 84px; height: 84px; left: 8px; bottom: 8px; }
+  #knob { width: 34px; height: 34px; left: 25px; top: 25px; }
+  .primary { width: 68px; height: 68px; }
+  .orb { width: 48px; height: 48px; }
+  .word { width: 54px; height: 54px; }
+  #t-dash, #t-horn, #t-build, #t-up, #t-dive, #t-act { display: none; }
+  #t-bite { right: 8px; bottom: 8px; width: 76px; height: 76px; }
+  #t-dive { right: 76px; bottom: 6px; }
+  #t-up { right: 76px; bottom: 66px; }
+  #t-act { right: 138px; bottom: 6px; }
+  #arc { width: 200px; height: 130px; right: 6px; bottom: 6px; }
+  #goal { max-width: 42%; font-size: 11px; }
+  #grow { top: 48px; font-size: 11px; }
+  h1 { font-size: 40px; }
+}
+@media (max-width: 720px) {
+  h1 { font-size: 42px; }
+  .swatches button { width: 72px; font-size: 12px; }
+  .panel { right: 8px; top: 48px; width: min(360px, 70vw); }
+}
