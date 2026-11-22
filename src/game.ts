@@ -1,13 +1,13 @@
 import * as THREE from 'three'
 import { ARM_TYPES, BREAKERS, BUILDINGS, COLOR_NAMES, COLORS, CUTTERS, DEFENSES, FEET, FIN_LINE, GEMS, HORNS, JAWS, SKINS, TAIL_LINE, TEETH, TIER_SPENT, WING_STYLES } from '../shared/catalog'
-import { buildAt, createWorld, nearestInCone, placeDefense, playerOf, step, tryPurchase, type Ent, type Frame, type World } from '../shared/sim'
+import { applyWorldSnapshot, buildAt, createWorld, nearestInCone, placeDefense, playerOf, snapshotWorld, step, tryPurchase, type Ent, type Frame, type World } from '../shared/sim'
 import { defenseCap, fishGoal, growFish, hideStock, tierOf } from '../shared/rules'
 import { audio } from './audio'
 import { bodyBox } from '../shared/body'
 import { buildCreature, creatureKey, poseCreature } from './mesh'
 import { ChunkWorld } from './chunks'
 import { buildWater, loadPbr, setTerrainQuality } from './world3d'
-import { WATER } from '../shared/terrain'
+import { WATER, exportCarves, importCarves } from '../shared/terrain'
 
 const SAVE = 'evo2.eden.v2'
 
@@ -84,6 +84,8 @@ export class Game {
   private hornT = 0
   private actHeld = false
   private cd = { dash: 0, horn: 0, act: 0, build: 0 }
+  private punch = { t: 1, dur: 0.22, amp: 0, ax: 1, ay: 0.35 }
+  private saveAcc = 0
 
   constructor(canvas: HTMLCanvasElement) {
     this.world = createWorld()
@@ -122,6 +124,7 @@ export class Game {
     this.debugLine.frustumCulled = false
     this.debugLine.visible = false
     this.scene.add(this.debugLine)
+    this.load()
     this.paintWorld()
     this.resize()
     window.addEventListener('resize', () => this.resize())
@@ -141,7 +144,6 @@ export class Game {
     })
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()))
     this.bindUi()
-    this.load()
     requestAnimationFrame(() => this.frame())
   }
 
@@ -276,6 +278,10 @@ export class Game {
     this.touch()
     this.guardSurface()
     this.applyQuality()
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.save()
+    })
+    window.addEventListener('pagehide', () => this.save())
     const view = this.renderer.domElement
     view.addEventListener('click', () => {
       if (this.phoneLayout() || !this.playing) return
@@ -464,7 +470,7 @@ export class Game {
     you.ep = result.ep
     you.spent = result.spent
     this.keysigs.delete(you.id)
-    audio.blip('eat')
+    this.feel('evolve')
     this.save()
     if (this.evoOpen) this.renderEvo()
   }
@@ -591,7 +597,8 @@ export class Game {
           const result = tryPurchase(you, 'skin', 'next')
           this.world.banner = result.reason
           this.world.bannerT = 2
-          audio.blip(result.ok ? 'eat' : 'hurt')
+          if (result.ok) this.feel('evolve')
+          else audio.blip('hurt')
           this.keysigs.delete(you.id)
           this.renderEvo()
           this.save()
@@ -646,7 +653,8 @@ export class Game {
         const result = tryPurchase(you, kind, id)
         this.world.banner = result.reason
         this.world.bannerT = 2
-        audio.blip(result.ok ? 'eat' : 'hurt')
+        if (result.ok) this.feel('evolve')
+        else audio.blip('hurt')
         this.keysigs.delete(you.id)
         this.renderEvo()
         this.save()
@@ -669,9 +677,55 @@ export class Game {
         const result = el.dataset.build ? buildAt(this.world, el.dataset.build) : placeDefense(this.world, el.dataset.def ?? '')
         this.world.banner = result.reason
         this.world.bannerT = 2
-        audio.blip(result.ok ? 'dig' : 'hurt')
+        if (result.ok) this.feel('dig')
+        else audio.blip('hurt')
+        this.save()
       }),
     )
+  }
+
+  private feel(kind: string): void {
+    audio.blip(kind)
+    if (kind === 'hit' || kind === 'bite') {
+      this.kickCam(0.1)
+      navigator.vibrate?.(25)
+    } else if (kind === 'eat' || kind === 'gem' || kind === 'chop' || kind === 'dig' || kind === 'mine' || kind === 'gather') {
+      this.kickCam(0.08, 0.7, 0.5)
+      navigator.vibrate?.(30)
+    } else if (kind === 'evolve') {
+      this.kickCam(0.16, 0.45, 0.85)
+      navigator.vibrate?.(45)
+    } else if (kind === 'hurt' || kind === 'trap' || kind === 'geyser') {
+      this.kickCam(0.2)
+      navigator.vibrate?.(80)
+    } else if (kind === 'warn' || kind === 'alert' || kind === 'wave') {
+      this.kickCam(0.12)
+      navigator.vibrate?.(80)
+    }
+  }
+
+  private kickCam(amp: number, ax = 1, ay = 0.35): void {
+    const leftover = this.punch.t < this.punch.dur ? this.punch.amp : 0
+    this.punch.t = 0
+    this.punch.dur = 0.22
+    this.punch.amp = Math.max(amp, leftover)
+    this.punch.ax = ax
+    this.punch.ay = ay
+  }
+
+  private applyCamFeel(dt: number): void {
+    if (this.punch.t < this.punch.dur) {
+      const u = Math.min(1, this.punch.t / this.punch.dur)
+      const wave = Math.sin(Math.PI * u) * (1 - u)
+      this.camera.position.x += wave * this.punch.amp * this.punch.ax
+      this.camera.position.y += wave * this.punch.amp * this.punch.ay
+      this.punch.t += dt
+    }
+    if (this.world.shake > 0) {
+      const a = Math.min(0.1, this.world.shake * 0.28)
+      this.camera.position.x += Math.sin(this.time * 8) * a
+      this.camera.position.y += Math.cos(this.time * 6.2) * a * 0.35
+    }
   }
 
   private applyTouchVisibility(): void {
@@ -919,6 +973,11 @@ export class Game {
     requestAnimationFrame(() => this.frame())
     const dt = Math.min(0.033, this.clock.getDelta())
     this.time += dt
+    this.saveAcc += dt
+    if (this.playing && this.saveAcc >= 8) {
+      this.saveAcc = 0
+      this.save()
+    }
     this.waterU.value = this.time
     this.easeLook(dt)
     this.pollPad(dt)
@@ -935,14 +994,13 @@ export class Game {
     else if (this.playing && !this.paused && !this.evoOpen && !this.buildOpen && !this.world.over) {
       const ev = step(this.world, dt, this.gather(dt))
       for (const e of ev) {
-        if (e.t !== 'note') audio.blip(e.t === 'eat' ? 'eat' : e.t)
+        if (e.t !== 'note') this.feel(e.t === 'eat' ? 'eat' : e.t)
         if (e.t === 'hit' || e.t === 'hurt') {
           this.burst(e.x, e.y, e.t === 'hit' ? 0xffe6a0 : 0xc4b59a, e.text)
           if (e.t === 'hit') this.flashHit(e.x, e.y)
         }
         if (e.t === 'eat') this.burst(e.x, e.y, 0xf0e0a8, e.text)
       }
-      if (ev.some((e) => e.t === 'warn')) navigator.vibrate?.(80)
     }
     this.sync()
     const you = playerOf(this.world)
@@ -981,7 +1039,7 @@ export class Game {
     this.camPos.lerp(this.camGoal, ck)
     this.lookPos.lerp(this.lookGoal, 1 - Math.exp(-dt * 3.2))
     this.camera.position.copy(this.camPos)
-    if (this.world.shake > 0) this.camera.position.x += Math.sin(this.time * 40) * 0.12
+    this.applyCamFeel(dt)
     this.camera.lookAt(this.lookPos)
     this.camera.updateProjectionMatrix()
     this.sun.position.set(you.x - 10, 18, 12)
@@ -1276,7 +1334,24 @@ export class Game {
   save(): void {
     const you = playerOf(this.world)
     try {
-      localStorage.setItem(SAVE, JSON.stringify({ name: you.name, ep: you.ep, spent: you.spent, load: you.load, unlocked: you.unlocked, bag: you.bag, gems: you.gems, clan: you.clan }))
+      const world = snapshotWorld(this.world)
+      localStorage.setItem(
+        SAVE,
+        JSON.stringify({
+          name: you.name,
+          ep: you.ep,
+          spent: you.spent,
+          load: you.load,
+          unlocked: you.unlocked,
+          bag: you.bag,
+          gems: you.gems,
+          clan: you.clan,
+          terrain: exportCarves(),
+          columns: world.columns,
+          nodes: world.nodes,
+          bases: world.bases,
+        }),
+      )
     } catch {
       /* ignore */
     }
@@ -1286,7 +1361,12 @@ export class Game {
     try {
       const raw = localStorage.getItem(SAVE)
       if (!raw) return
-      const data = JSON.parse(raw) as Partial<Ent>
+      const data = JSON.parse(raw) as Partial<Ent> & {
+        terrain?: unknown
+        columns?: { x: number; dug: number; prog: number }[]
+        nodes?: { id: number; mat: string; amount: number; hp: number }[]
+        bases?: import('../shared/sim').Base[]
+      }
       const you = playerOf(this.world)
       if (data.load) you.load = { ...you.load, ...data.load }
       if (typeof data.ep === 'number') you.ep = data.ep
@@ -1296,6 +1376,8 @@ export class Game {
       if (data.gems) you.gems = data.gems
       if (data.name) you.name = data.name
       if (typeof data.clan === 'string') you.clan = data.clan
+      if (data.terrain) importCarves(data.terrain)
+      applyWorldSnapshot(this.world, data)
     } catch {
       /* ignore */
     }
