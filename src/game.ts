@@ -815,6 +815,8 @@ function waterMat(time: { value: number }): THREE.ShaderMaterial {
         vec3 shallow = vec3(0.27, 0.50, 0.46);
         vec3 col = mix(deep, shallow, vUv.x * 0.8 + wave * 0.05);
         gl_FragColor = vec4(col, 0.46);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   })
@@ -841,6 +843,8 @@ function causticMat(time: { value: number }): THREE.ShaderMaterial {
         float b = sin(vUv.x * 13.0 - time * 0.6 + vUv.y * 8.0);
         float c = pow(max(0.0, a * 0.55 + b * 0.45), 2.0);
         gl_FragColor = vec4(0.55, 0.78, 0.7, 0.09 * c);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   })
