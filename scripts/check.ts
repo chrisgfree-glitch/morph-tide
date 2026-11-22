@@ -1,7 +1,7 @@
 import { starterLoad } from '../shared/catalog'
 import { columnSeconds } from '../shared/dig'
 import { createWorld, playerOf, step } from '../shared/sim'
-import { tierOf } from '../shared/rules'
+import { bodyBreakPower, cellSeconds, chopSeconds, tierOf } from '../shared/rules'
 
 function t7() {
   const load = starterLoad()
@@ -63,4 +63,29 @@ young.bases[0]!.warn = 0.05
 step(young, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false })
 if (young.raiders.length) throw new Error('tier 2 base was raided')
 
-console.log(`deep stone full ${full.toFixed(1)}s tube ${tube.toFixed(1)}s vent ${vent.toFixed(1)}s; raids ok`)
+const horned = starterLoad()
+horned.horn = 'lance'
+if (bodyBreakPower(horned, 'med') <= 0) throw new Error('lance horn should help break medium rock')
+if (cellSeconds(horned, 30, 'granite') === null) throw new Error('lance horn should slowly break granite without a breaker')
+if (cellSeconds(horned, 30, 'deep-stone') !== null) throw new Error('a horn must not break deep stone')
+
+const saw = starterLoad()
+saw.jaw = 'saw'
+if (chopSeconds(saw, 12, 'birch') === null) throw new Error('saw jaw should cut soft birch')
+if (chopSeconds(starterLoad(), 0, 'birch') !== null) throw new Error('pebble nip should not cut birch')
+if (chopSeconds(saw, 12, 'petrified') !== null) throw new Error('a saw jaw must not cut petrified wood early')
+
+const spade = starterLoad()
+spade.arms = 2
+spade.armType = 'spade'
+spade.feet = 'claw'
+if (cellSeconds(spade, 55, 'sandstone') === null) throw new Error('spade arms should dig sandstone')
+
+const placed = createWorld()
+const trees = new Set(placed.nodes.filter((n) => n.kind === 'tree').map((n) => n.mat))
+const rocks = new Set(placed.nodes.filter((n) => n.kind === 'rock').map((n) => n.mat))
+if (trees.size < 20) throw new Error(`expected 20 tree kinds, got ${trees.size}`)
+if (rocks.size < 20) throw new Error(`expected 20 rock kinds, got ${rocks.size}`)
+
+console.log(`deep stone full ${full.toFixed(1)}s tube ${tube.toFixed(1)}s vent ${vent.toFixed(1)}s; raids ok; parts and nodes ok`)
+
