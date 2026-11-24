@@ -317,3 +317,66 @@ Known issues / leftover:
 - Volcano traps, full 10-tier presentation, vines as a gather type, `20b4663` lighting, and server persistence for 100-player worlds are still later work.
 - Terrain dig still unlocks at tier 3; the early den is the Lean-to.
 - Persistence is still local to one browser.
+
+
+## Guppy fresh start and Valheim look (Nov 24, 2026)
+
+Chris approved this pass in chat at 3:00 PM PT: start a new game as a tiny
+guppy, give the shallows a Valheim look (not gritty Rust), and push it live.
+Worked on `coding-guy/guppy-valheim` from current `main` (`1f29345`).
+
+`20b4663` underwater lighting is still not in this repo or on GitHub
+`evo-back-to-eden` (only the earlier import note at `0466e63`), so it was
+skipped again rather than reconstructed.
+
+A separate docs-only commit, `7c99f9e`, adds `docs/GAME-CONCEPT-5-LEVELS.md`
+as Chris wrote it (five-level master concept). The file was not edited.
+
+Decay, raids, the Apocalypse Tracker, and any Cloudflare server deploy were
+out of scope and were not touched.
+
+### What changed
+
+- A new game (and Restart) spawns a tiny guppy: base tier, size 0.42, no grown
+  parts, empty bag, 0 EP, a weaker bite (capped at 2), and a smaller body than
+  the old 0.92 starter. Ten nearby fry and the first goal “Eat 5 fish (0/5)”
+  keep the opening minutes clear. Steve's 10-tier spend ladder is unchanged.
+- Existing `evo2.eden.v2` saves still load their size, parts, materials, EP,
+  pose, and progress. An old 0.92 / spent-12 save does not get the guppy bite
+  cap or shrink.
+- Shallows look: light turquoise tinted water, soft depth fog that stays aqua
+  (underwater background no longer punches through to a pale sky), additive
+  light shafts from the surface, clustered mossy rocks with shape/scale/color
+  variation, and instanced kelp with crossed blades, sway, height and color
+  variation. Counts drop on mid/low quality for small screens (low: 7 rocks,
+  27 kelp, 2 shafts; mid: 15 / 75 / 5; high: 25 / 168 / 8).
+
+### Preview
+
+`npm run check` and `npm run build` passed, including a new guppy + save
+compatibility unit test. Preview (target omitted) of `56a07a2`:
+
+- Deployment id: `dpl_HDQs4nHdmjBDzguuYtaog5LW9riU`
+- URL: https://evo-back-to-eden-225i6p7uo-chrisgfree-5870.vercel.app
+- Commit: `56a07a28c600448aac6c1d7f913b5c221ba1a770`
+
+Playwright (Chrome + SwiftShader) at 1280×800 and 844×390:
+
+- New game starts as a guppy (size 0.42, 0 spent/EP, empty bag, 10 nearby fry,
+  goal Eat 5 fish). Passed both sizes.
+- An existing mid-game save (size 0.92, spent 12, lungs 1, 18 EP, 2 stone,
+  pose 42.5) loads unchanged on a fresh boot. Phone passed in the first run;
+  desktop needed a fresh-browser retry after a `#solo` timeout on a second
+  context, then passed.
+- Select / Pause / Save / Load still work (Saved and Loaded toasts). Passed
+  both sizes.
+- Paths (a) eat/evolve, (b) build/place/refund, (c) lock-on/dash/orbit: B and
+  C passed both sizes on the first run; A (evolve) passed, eat needed a closer
+  mouth placement retry on desktop, then passed. Phone path A passed first try.
+- Screenshots show turquoise water, kelp, and rocks. HQ captures (quality
+  forced high/mid so SwiftShader's auto-downscale did not hide them):
+  `smoke/r4-desktop-look-hq.png`, `smoke/r4-phone-land-look-hq.png`.
+
+### Production
+
+To be filled after the production deploy and retest.
