@@ -242,3 +242,49 @@ input { background: #1a2a30; color: #e7e0d4; border: 2px solid #d7cbb8; padding:
   #pad-map { font-size: 10px; padding: 4px 8px; gap: 4px 8px; }
   #build-tray { padding: 4px 8px; }
 }
+
+.menu-card {
+  inset: auto;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(320px, 90vw);
+  max-height: 86vh;
+  text-align: center;
+  z-index: 8;
+  padding: 16px;
+}
+.menu-card header { justify-content: center; }
+.menu-card button, #pause-actions button {
+  display: block;
+  width: calc(100% - 8px);
+  text-align: center;
+  min-height: 44px;
+  min-width: 44px;
+  margin: 6px 4px;
+  padding: 10px 12px;
+}
+#pause-actions { margin: 0 0 10px; }
+.quit-copy { margin: 0 0 8px; color: #d4c4a4; }
+#save-toast {
+  position: absolute;
+  z-index: 9;
+  left: 50%;
+  bottom: 72px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 10px 16px;
+  min-height: 44px;
+  background: rgba(12, 24, 28, 0.92);
+  border: 2px solid #d7cbb8;
+  color: #e7e0d4;
+  pointer-events: none;
+}
+#save-toast[hidden] { display: none !important; }
+@media (max-height: 420px) {
+  .menu-card { padding: 8px; }
+  #select button, #quit-ask button, #pause-actions button, #settings-close {
+    min-height: 44px;
+    padding: 10px 12px;
+  }
+}

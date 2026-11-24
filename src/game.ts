@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { ARM_TYPES, BREAKERS, COLOR_NAMES, COLORS, CUTTERS, FEET, FIN_LINE, GEMS, HORNS, JAWS, ROCK_TINT, SKINS, TAIL_LINE, TEETH, TREE_TINT, TIER_SPENT, WING_STYLES, treeById } from '../shared/catalog'
-import { applyWorldSnapshot, createWorld, nearestInCone, playerOf, snapshotWorld, step, tryPurchase, type Ent, type Frame, type World } from '../shared/sim'
+import { createWorld, nearestInCone, playerOf, step, tryPurchase, type Ent, type Frame, type World } from '../shared/sim'
+import { SAVE_KEY, applyGameSave, encodeGameSave, parseGameSave, serializeGameSave } from '../shared/save'
 import { PIECES, canPlace, costLine, nearestPiece, pieceById, placePiece, refundPiece } from '../shared/build'
 import { fishGoal, growFish, hideStock, tierOf } from '../shared/rules'
 import { audio } from './audio'
@@ -8,9 +9,9 @@ import { attackVolumes, type HitVol } from '../shared/body'
 import { buildCreature, creatureKey, poseCreature } from './mesh'
 import { ChunkWorld } from './chunks'
 import { buildWater, loadPbr, setTerrainQuality } from './world3d'
-import { WATER, exportCarves, groundAt, importCarves } from '../shared/terrain'
+import { WATER, groundAt } from '../shared/terrain'
 
-const SAVE = 'evo2.eden.v2'
+const SAVE = SAVE_KEY
 
 export class Game {
   world: World
@@ -18,6 +19,9 @@ export class Game {
   paused = false
   evoOpen = false
   settingsOpen = false
+  selectOpen = false
+  pauseOpen = false
+  quitOpen = false
   mapOpen = false
   /** Solo stays false, so the map pauses. A live shard session sets this and the map stays an overlay. */
   liveMultiplayer = false
@@ -100,6 +104,8 @@ export class Game {
   private cd = { dash: 0, horn: 0, act: 0, build: 0 }
   private punch = { t: 1, dur: 0.22, amp: 0, ax: 1, ay: 0.35 }
   private saveAcc = 0
+  private lastSaved: string | null = null
+  private toastT = 0
 
   constructor(canvas: HTMLCanvasElement) {
     this.world = createWorld()
@@ -149,16 +155,26 @@ export class Game {
     window.addEventListener('resize', () => this.resize())
     window.addEventListener('keydown', (e) => {
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) e.preventDefault()
-      this.keys.add(e.key.toLowerCase())
-      if ((e.key === 'e' || e.key === 'E') && !this.buildMode) this.toggleEvo()
-      if (e.key === 'b' || e.key === 'B') this.toggleBuild()
-      if (e.key === 'Escape') {
-        if (this.buildMode) this.toggleBuild(false)
-        else if (this.mapOpen) this.toggleMap(false)
-        else if (this.settingsOpen) this.toggleSettings(false)
-        else if (this.playing) this.toggleSettings(true)
+      const inMenu = this.menuTargets().length > 0
+      if (inMenu && (e.key === 'ArrowUp' || e.key === 'ArrowLeft')) {
+        this.moveFocus(-1)
+        return
       }
-      if ((e.key === 'm' || e.key === 'M') && !(e.target instanceof HTMLInputElement)) this.toggleMap()
+      if (inMenu && (e.key === 'ArrowDown' || e.key === 'ArrowRight')) {
+        this.moveFocus(1)
+        return
+      }
+      if (inMenu && (e.key === 'Enter')) {
+        this.activateFocus(0)
+        return
+      }
+      this.keys.add(e.key.toLowerCase())
+      if ((e.key === 'e' || e.key === 'E') && !this.buildMode && !inMenu) this.toggleEvo()
+      if ((e.key === 'b' || e.key === 'B') && !inMenu) this.toggleBuild()
+      if (e.key === 'Escape') {
+        if (!this.closeTopMenu() && this.playing) this.toggleSelect(true)
+      }
+      if ((e.key === 'm' || e.key === 'M') && !(e.target instanceof HTMLInputElement) && !inMenu) this.toggleMap()
       if (e.key === 'h' || e.key === 'H') this.debug = !this.debug
       if (e.key === 'v' || e.key === 'V') this.firstPerson = !this.firstPerson
       if (e.key === 'Tab') {
@@ -279,8 +295,17 @@ export class Game {
     })
     document.getElementById('evo-close')?.addEventListener('click', () => this.toggleEvo(false))
     document.getElementById('build-close')?.addEventListener('click', () => this.toggleBuild(false))
-    document.getElementById('settings-close')?.addEventListener('click', () => this.toggleSettings(false))
-    document.getElementById('t-settings')?.addEventListener('click', () => this.toggleSettings())
+    document.getElementById('settings-close')?.addEventListener('click', () => this.togglePause(false))
+    document.getElementById('t-settings')?.addEventListener('click', () => this.toggleSelect())
+    document.getElementById('select-pause')?.addEventListener('click', () => this.togglePause(true))
+    document.getElementById('select-evolve')?.addEventListener('click', () => this.openEvolveFromSelect())
+    document.getElementById('select-quit')?.addEventListener('click', () => this.toggleQuit(true))
+    document.getElementById('pause-resume')?.addEventListener('click', () => this.resumePlay())
+    document.getElementById('pause-save')?.addEventListener('click', () => this.manualSave())
+    document.getElementById('pause-load')?.addEventListener('click', () => this.manualLoad())
+    document.getElementById('quit-save')?.addEventListener('click', () => this.quitToTitle(true))
+    document.getElementById('quit-quit')?.addEventListener('click', () => this.quitToTitle(false))
+    document.getElementById('quit-cancel')?.addEventListener('click', () => this.toggleQuit(false))
     document.getElementById('t-map')?.addEventListener('click', () => this.toggleMap())
     document.getElementById('map-close')?.addEventListener('click', () => this.toggleMap(false))
     this.renderer.domElement.addEventListener('pointerdown', () => this.revealTouch())
@@ -553,13 +578,173 @@ export class Game {
     if (this.evoOpen) this.renderEvo()
   }
 
-  toggleSettings(force?: boolean): void {
-    this.settingsOpen = force ?? !this.settingsOpen
-    const el = document.getElementById('settings')
-    if (el) el.hidden = !this.settingsOpen
-    if (this.settingsOpen) this.focusIndex = 0
+  toggleSelect(force?: boolean): void {
+    if (!this.playing && force !== false) return
+    const next = force ?? !this.selectOpen
+    if (!next) {
+      this.toggleQuit(false)
+      this.togglePause(false)
+    }
+    this.selectOpen = next
+    const el = document.getElementById('select')
+    if (el) el.hidden = !this.selectOpen
+    if (this.selectOpen) this.focusIndex = 0
     this.syncPause()
     this.markFocus()
+  }
+
+  togglePause(force?: boolean): void {
+    const next = force ?? !this.pauseOpen
+    this.pauseOpen = next
+    this.settingsOpen = next
+    const el = document.getElementById('settings')
+    if (el) el.hidden = !this.pauseOpen
+    if (this.pauseOpen) {
+      this.selectOpen = true
+      const sel = document.getElementById('select')
+      if (sel) sel.hidden = true
+      this.focusIndex = 0
+    } else {
+      const sel = document.getElementById('select')
+      if (sel) sel.hidden = !this.selectOpen
+    }
+    this.syncPause()
+    this.markFocus()
+  }
+
+  toggleQuit(force?: boolean): void {
+    const next = force ?? !this.quitOpen
+    this.quitOpen = next
+    const el = document.getElementById('quit-ask')
+    if (el) el.hidden = !this.quitOpen
+    if (this.quitOpen) {
+      this.selectOpen = true
+      const sel = document.getElementById('select')
+      if (sel) sel.hidden = true
+      this.focusIndex = 0
+    } else {
+      const sel = document.getElementById('select')
+      if (sel) sel.hidden = !this.selectOpen
+    }
+    this.syncPause()
+    this.markFocus()
+  }
+
+  private openEvolveFromSelect(): void {
+    this.selectOpen = true
+    document.getElementById('select')?.setAttribute('hidden', '')
+    this.toggleEvo(true)
+    this.syncPause()
+  }
+
+  private resumePlay(): void {
+    this.toggleQuit(false)
+    this.togglePause(false)
+    this.toggleEvo(false)
+    this.toggleSelect(false)
+  }
+
+  /** Close the topmost submenu or Select. Returns true if something closed. */
+  closeTopMenu(): boolean {
+    if (this.evoOpen) {
+      this.toggleEvo(false)
+      if (this.selectOpen) {
+        const sel = document.getElementById('select')
+        if (sel) sel.hidden = false
+        this.focusIndex = 0
+        this.markFocus()
+      }
+      this.syncPause()
+      return true
+    }
+    if (this.quitOpen) {
+      this.toggleQuit(false)
+      return true
+    }
+    if (this.pauseOpen) {
+      this.togglePause(false)
+      return true
+    }
+    if (this.mapOpen) {
+      this.toggleMap(false)
+      return true
+    }
+    if (this.buildMode) {
+      this.toggleBuild(false)
+      return true
+    }
+    if (this.selectOpen) {
+      this.toggleSelect(false)
+      return true
+    }
+    return false
+  }
+
+  private showToast(text: string): void {
+    const el = document.getElementById('save-toast')
+    if (el) {
+      el.textContent = text
+      el.hidden = false
+    }
+    this.toastT = 1.6
+  }
+
+  manualSave(): boolean {
+    this.save()
+    this.showToast('Saved')
+    return true
+  }
+
+  manualLoad(): boolean {
+    const raw = this.lastSaved ?? (typeof localStorage !== 'undefined' ? localStorage.getItem(SAVE) : null)
+    if (!raw) {
+      this.showToast('No save')
+      return false
+    }
+    const data = parseGameSave(raw)
+    if (!data) {
+      this.showToast('No save')
+      return false
+    }
+    applyGameSave(this.world, data)
+    this.lastSaved = serializeGameSave(data)
+    const you = playerOf(this.world)
+    this.yaw = you.yaw
+    this.yawT = you.yaw
+    this.pitch = you.pitch
+    this.pitchT = you.pitch
+    this.keysigs.clear()
+    this.showToast('Loaded')
+    return true
+  }
+
+  quitToTitle(saveFirst: boolean): void {
+    if (saveFirst) this.save()
+    else if (this.lastSaved) {
+      const data = parseGameSave(this.lastSaved)
+      if (data) applyGameSave(this.world, data)
+    }
+    this.goToTitle()
+  }
+
+  goToTitle(): void {
+    this.playing = false
+    this.resumePlay()
+    this.buildMode = false
+    this.ghost.visible = false
+    document.getElementById('build-tray')?.setAttribute('hidden', '')
+    document.getElementById('hud')?.setAttribute('hidden', '')
+    document.getElementById('map')?.setAttribute('hidden', '')
+    document.getElementById('overlay')?.setAttribute('hidden', '')
+    document.getElementById('pad-map')?.setAttribute('hidden', '')
+    document.getElementById('title')?.removeAttribute('hidden')
+    this.applyTouchVisibility()
+    this.syncPause()
+  }
+
+  toggleSettings(force?: boolean): void {
+    if (force === false) this.resumePlay()
+    else this.toggleSelect(true)
   }
 
   toggleMap(force?: boolean): void {
@@ -577,7 +762,7 @@ export class Game {
 
   /** Solo pauses while the map is open. Multiplayer keeps the world running under the overlay. */
   private syncPause(): void {
-    this.paused = this.settingsOpen || (this.mapOpen && !this.liveMultiplayer)
+    this.paused = this.selectOpen || this.pauseOpen || this.quitOpen || this.evoOpen || (this.mapOpen && !this.liveMultiplayer)
   }
 
   restart(): void {
@@ -588,6 +773,9 @@ export class Game {
     this.playing = false
     this.paused = false
     this.settingsOpen = false
+    this.selectOpen = false
+    this.pauseOpen = false
+    this.quitOpen = false
     this.mapOpen = false
     this.explored.clear()
     document.getElementById('map')?.setAttribute('hidden', '')
@@ -598,7 +786,7 @@ export class Game {
     this.pitch = 0.05
     this.yawT = 0.4
     this.pitchT = 0.05
-    for (const id of ['settings', 'evo', 'build', 'hud', 'overlay']) document.getElementById(id)?.setAttribute('hidden', '')
+    for (const id of ['settings', 'select', 'quit-ask', 'save-toast', 'evo', 'build', 'hud', 'overlay']) document.getElementById(id)?.setAttribute('hidden', '')
     document.getElementById('title')?.removeAttribute('hidden')
     try {
       localStorage.removeItem(SAVE)
@@ -631,6 +819,13 @@ export class Game {
     if (!el) return
     el.hidden = !this.evoOpen
     if (this.evoOpen) this.renderEvo()
+    else if (this.selectOpen && !this.pauseOpen && !this.quitOpen) {
+      const sel = document.getElementById('select')
+      if (sel) sel.hidden = false
+      this.focusIndex = 0
+      this.markFocus()
+    }
+    this.syncPause()
   }
 
   toggleBuild(force?: boolean): void {
@@ -1063,7 +1258,10 @@ export class Game {
 
   private menuTargets(): HTMLElement[] {
     const pick = (ids: string[]) => ids.map((id) => document.getElementById(id)).filter((el): el is HTMLElement => !!el && !el.hidden)
-    if (this.settingsOpen) return pick(['settings-close', 'set-sens', 'set-invert', 'set-vol', 'set-mute', 'set-quality', 'set-restart'])
+    if (this.quitOpen) return pick(['quit-save', 'quit-quit', 'quit-cancel'])
+    if (this.pauseOpen) return pick(['pause-resume', 'pause-save', 'pause-load', 'settings-close', 'set-sens', 'set-invert', 'set-vol', 'set-mute', 'set-quality', 'set-restart'])
+    if (this.evoOpen) return pick(['evo-close'])
+    if (this.selectOpen) return pick(['select-pause', 'select-evolve', 'select-quit'])
     if (this.mapOpen) return pick(['map-close'])
     if (!this.playing) return pick(['solo'])
     const over = document.getElementById('overlay')
@@ -1122,7 +1320,7 @@ export class Game {
       this.touchForced = false
       this.applyTouchVisibility()
     }
-    if (map) map.hidden = !this.padOn || !this.playing || this.settingsOpen || this.mapOpen
+    if (map) map.hidden = !this.padOn || !this.playing || this.selectOpen || this.pauseOpen || this.quitOpen || this.evoOpen || this.mapOpen
     this.gp = { lx: 0, ly: 0, rx: 0, ry: 0, attack: false, horn: false, dash: false, dig: false, rise: false, dive: false, sprint: false, use: false }
     if (!pad) return
     const pressed = (i: number) => !!pad.buttons[i]?.pressed || (pad.buttons[i]?.value ?? 0) > 0.45
@@ -1141,10 +1339,12 @@ export class Game {
       this.touchForced = false
       this.applyTouchVisibility()
     }
-    if (edge(9)) this.toggleSettings(true)
-    if (edge(8)) this.toggleMap()
+    if (edge(9)) {
+      if (!this.closeTopMenu()) this.toggleSelect(true)
+    }
+    if (edge(8) && !this.selectOpen && !this.pauseOpen && !this.quitOpen) this.toggleMap()
     const menu = this.menuTargets()
-    if (this.mapOpen && !this.settingsOpen) {
+    if (this.mapOpen && !this.selectOpen && !this.pauseOpen && !this.quitOpen) {
       this.mapOffX += lx * dt * 36
       this.mapOffZ += ly * dt * 36
       if (edge(1)) this.toggleMap(false)
@@ -1162,10 +1362,7 @@ export class Game {
         this.sliderWait = 0.16
       }
       if (edge(0)) this.activateFocus(0)
-      if (edge(1)) {
-        if (this.settingsOpen) this.toggleSettings(false)
-        else if (this.mapOpen) this.toggleMap(false)
-      }
+      if (edge(1)) this.closeTopMenu()
       return
     }
     if (Math.abs(rx) > 0.18) this.yawT -= rx * dt * 1.15 * this.lookSens
@@ -1366,8 +1563,12 @@ export class Game {
       this.padPromptT -= dt
       if (this.padPromptT <= 0) document.getElementById('pad-prompt')?.setAttribute('hidden', '')
     }
+    if (this.toastT > 0) {
+      this.toastT -= dt
+      if (this.toastT <= 0) document.getElementById('save-toast')?.setAttribute('hidden', '')
+    }
     if (this.world.hitStop > 0) this.world.hitStop = Math.max(0, this.world.hitStop - dt)
-    else if (this.playing && !this.paused && !this.evoOpen && !this.settingsOpen && !this.mapOpen && !this.world.over) {
+    else if (this.playing && !this.paused && !this.evoOpen && !this.selectOpen && !this.pauseOpen && !this.quitOpen && !this.mapOpen && !this.world.over) {
       const ev = step(this.world, dt, this.gather(dt))
       for (const e of ev) {
         if (e.t !== 'note') this.feel(e.t === 'eat' ? 'eat' : e.t)
@@ -1729,27 +1930,11 @@ export class Game {
   }
 
   save(): void {
-    const you = playerOf(this.world)
     try {
-      const world = snapshotWorld(this.world)
-      localStorage.setItem(
-        SAVE,
-        JSON.stringify({
-          name: you.name,
-          ep: you.ep,
-          spent: you.spent,
-          load: you.load,
-          unlocked: you.unlocked,
-          bag: you.bag,
-          gems: you.gems,
-          clan: you.clan,
-          terrain: exportCarves(),
-          columns: world.columns,
-          nodes: world.nodes,
-          bases: world.bases,
-          pieces: world.pieces,
-        }),
-      )
+      const data = encodeGameSave(this.world)
+      const raw = serializeGameSave(data)
+      this.lastSaved = raw
+      localStorage.setItem(SAVE, raw)
     } catch {
       /* ignore */
     }
@@ -1759,24 +1944,15 @@ export class Game {
     try {
       const raw = localStorage.getItem(SAVE)
       if (!raw) return
-      const data = JSON.parse(raw) as Partial<Ent> & {
-        terrain?: unknown
-        columns?: { x: number; dug: number; prog: number }[]
-        nodes?: { id: number; mat: string; amount: number; hp: number }[]
-        bases?: import('../shared/sim').Base[]
-        pieces?: import('../shared/build').Piece[]
-      }
+      const data = parseGameSave(raw)
+      if (!data) return
+      applyGameSave(this.world, data)
+      this.lastSaved = serializeGameSave(encodeGameSave(this.world))
       const you = playerOf(this.world)
-      if (data.load) you.load = { ...you.load, ...data.load }
-      if (typeof data.ep === 'number') you.ep = data.ep
-      if (typeof data.spent === 'number') you.spent = data.spent
-      if (data.unlocked) you.unlocked = data.unlocked
-      if (data.bag) you.bag = data.bag
-      if (data.gems) you.gems = data.gems
-      if (data.name) you.name = data.name
-      if (typeof data.clan === 'string') you.clan = data.clan
-      if (data.terrain) importCarves(data.terrain)
-      applyWorldSnapshot(this.world, data)
+      this.yaw = you.yaw
+      this.yawT = you.yaw
+      this.pitch = you.pitch
+      this.pitchT = you.pitch
     } catch {
       /* ignore */
     }
@@ -1799,10 +1975,17 @@ export function mount(): Game | null {
     start: () => game.start(),
     snapshot: () => {
       const you = playerOf(game.world)
-      return { x: you.x, y: you.y, hp: you.hp, ep: you.ep, spent: you.spent, tier: tierOf(you.spent), jaw: you.load.jaw, wings: you.load.wings, region: you.region, pvp: game.world.pvp, bases: game.world.bases.length, raiders: game.world.raiders.length, pieces: game.world.pieces.length, lockId: game['lockId'], buildMode: game['buildMode'] }
+      return { x: you.x, y: you.y, hp: you.hp, ep: you.ep, spent: you.spent, eats: game.world.eats, tier: tierOf(you.spent), jaw: you.load.jaw, wings: you.load.wings, region: you.region, pvp: game.world.pvp, bases: game.world.bases.length, raiders: game.world.raiders.length, pieces: game.world.pieces.length, lockId: game['lockId'], buildMode: game['buildMode'], selectOpen: game.selectOpen, pauseOpen: game.pauseOpen, evoOpen: game.evoOpen, quitOpen: game.quitOpen, playing: game.playing }
     },
     toggleBuild: (on?: boolean) => game.toggleBuild(on),
     toggleLock: () => game.toggleLock(),
+    toggleSelect: (on?: boolean) => game.toggleSelect(on),
+    togglePause: (on?: boolean) => game.togglePause(on),
+    toggleQuit: (on?: boolean) => game.toggleQuit(on),
+    resume: () => game['resumePlay'](),
+    save: () => game.manualSave(),
+    load: () => game.manualLoad(),
+    quit: (saveFirst?: boolean) => game.quitToTitle(!!saveFirst),
     place: () => game['confirmPlace'](),
     pickup: () => game['pickupPiece'](),
     cycle: (dir: number) => game['cyclePiece'](dir),
