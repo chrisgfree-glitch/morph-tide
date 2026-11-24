@@ -1,7 +1,8 @@
 import { starterLoad } from '../shared/catalog'
 import { columnSeconds } from '../shared/dig'
 import { attackVolumes, volumeHits } from '../shared/body'
-import { createWorld, playerOf, step } from '../shared/sim'
+import { applyWorldSnapshot, createWorld, playerOf, snapshotWorld, step } from '../shared/sim'
+import { canPlace, placePiece, refundPiece } from '../shared/build'
 import { bodyBreakPower, cellSeconds, chopSeconds, tierOf } from '../shared/rules'
 
 function t7() {
@@ -115,3 +116,30 @@ boss.hp = 0
 step(gate, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false })
 if (gate.won) throw new Error('defeating the colossus should open a gate, not win')
 if (!gate.gateOpen) throw new Error('colossus death should open the inland gate')
+
+
+const site = createWorld()
+const builder = playerOf(site)
+builder.bag.kelp = 2
+builder.x = 8
+builder.y = 1
+const ghost = canPlace(site, builder, 'lean', builder.x + 2, builder.y, 0, 0)
+if (!ghost.ok) throw new Error(`lean should be placeable: ${ghost.reason}`)
+const put = placePiece(site, builder, 'lean', builder.x + 2, builder.y, 0, 0)
+if (!put.ok || !put.piece) throw new Error(`lean-to place failed: ${put.reason}`)
+if ((builder.bag.kelp ?? 0) !== 0) throw new Error('lean-to should spend 2 kelp')
+if (site.pieces.length !== 1) throw new Error('piece not stored')
+const snap = snapshotWorld(site)
+const reload = createWorld()
+applyWorldSnapshot(reload, snap)
+if (reload.pieces.length !== 1 || reload.pieces[0]?.kind !== 'lean') throw new Error('pieces should persist in the world snapshot')
+const packed = refundPiece(reload, playerOf(reload), reload.pieces[0]!.id)
+if (!packed.ok) throw new Error(`refund failed: ${packed.reason}`)
+const left = reload.pieces.length
+if (left) throw new Error('refund should remove the piece')
+if ((playerOf(reload).bag.kelp ?? 0) < 2) throw new Error('refund should return kelp')
+const blockedBag = playerOf(createWorld())
+blockedBag.bag.kelp = 0
+const poor = canPlace(createWorld(), blockedBag, 'lean', 10, 1, 0, 0)
+if (poor.ok) throw new Error('lean-to must be red without kelp')
+console.log('lean-to places and refunds; pieces persist')

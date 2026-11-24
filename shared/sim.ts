@@ -1,6 +1,7 @@
 import type { Loadout } from './catalog'
 import { GEMS, GUARD_CAP, HIDES, RAID_GAP, RAID_MIN_TIER, RAIDER_CAP, SHIELD_SEC, WARN_SEC, buildById, defenseById, rockById, starterLoad, treeById } from './catalog'
 import { digTick, fullColumn, tubeColumn, ventColumn, type Column } from './dig'
+import type { Piece } from './build'
 import { attackVolumes, bodyBox, volumeHits } from './body'
 import { WATER, WORLD_Z, carve, fill, groundAt } from './terrain'
 import { buySkin, buySpec, canDig, cellSeconds, chopSeconds, compute, defenseCap, gemChance, landOk, purchase, pvpFactor, tierOf, type Buy, type Progress } from './rules'
@@ -48,6 +49,7 @@ export interface Ent {
   recover: number
   combo: number
   comboT: number
+  biteBuf: number
   tele: number
   heavy: boolean
   peak: number
@@ -130,6 +132,7 @@ export interface World {
   debris: { x: number; y: number; vy: number; life: number; dmg: number }[]
   eats: number
   gateOpen: boolean
+  pieces: Piece[]
 }
 
 export interface Frame {
@@ -145,6 +148,7 @@ export interface Frame {
   /** World-forward wish, -1..1. Strafe stays on ax. */
   forward?: number
   dive?: boolean
+  sprint?: boolean
 }
 
 export interface Evt {
@@ -198,6 +202,7 @@ function make(partial: Partial<Ent> & Pick<Ent, 'id' | 'kind' | 'name' | 'x' | '
     recover: 0,
     combo: 0,
     comboT: 0,
+    biteBuf: 0,
     tele: 0,
     heavy: false,
     peak: partial.y ?? 4,
@@ -233,6 +238,7 @@ export function createWorld(): World {
     debris: [],
     eats: 0,
     gateOpen: false,
+    pieces: [],
   }
   w.ents.push(make({ id: w.nextId++, kind: 'player', name: 'Tidewisp', species: 'you', x: 8, y: 2.4 }))
   const seeds: [string, string, number, number, Ent['region'], number][] = [
@@ -430,7 +436,8 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   const wishZ = Math.sin(yaw) * fwd * cp + Math.cos(yaw) * strafe
   you.facing = Math.cos(yaw) >= 0 ? 1 : -1
   if (submerged) {
-    const maxV = ((3.3 + stats.swim * 0.08) * slow) / (1 + Math.max(0, drag - 1) * 0.28)
+    const sprint = input.sprint ? 1.32 : 1
+    const maxV = ((3.3 + stats.swim * 0.08) * slow * sprint) / (1 + Math.max(0, drag - 1) * 0.28)
     const accel = 13 / Math.sqrt(box.mass)
     const idle = Math.abs(fwd) < 0.08 && Math.abs(strafe) < 0.08 && Math.abs(rise) < 0.08
     const climb = fwd * sp + rise * 0.85
@@ -443,7 +450,8 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   } else {
     const grav = 26 * box.mass
     you.vy -= grav * dt
-    const maxRun = ((4.4 + stats.spd * 0.1) * slow) / Math.sqrt(box.mass)
+    const sprint = input.sprint ? 1.35 : 1
+    const maxRun = ((4.4 + stats.spd * 0.1) * slow * sprint) / Math.sqrt(box.mass)
     const runA = (20 / box.mass) * (you.stun > 0 ? 0.2 : 1)
     const flop = you.x >= 62 && !landOk(you.load, you.spent)
     you.vx = approach(you.vx, flop ? -1.1 : wishX * maxRun, flop ? 6 : runA, dt)
@@ -462,11 +470,18 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     }
   }
   if (input.dash && you.recover <= 0) {
-    you.iframes = Math.max(you.iframes, 0.26)
-    const burst = (submerged ? 6.2 : 7.4) / Math.sqrt(box.mass)
-    you.vx = Math.cos(you.yaw) * burst
-    you.vz = Math.sin(you.yaw) * burst
-    you.biteCd = Math.max(you.biteCd, 0.15)
+    you.iframes = Math.max(you.iframes, 0.42)
+    const burst = (submerged ? 6.8 : 8.1) / Math.sqrt(box.mass)
+    const dashYaw = Math.hypot(input.ax, input.forward ?? 0) > 0.2
+      ? Math.atan2(Math.sin(you.yaw) * (input.forward ?? 0) + Math.cos(you.yaw) * input.ax, Math.cos(you.yaw) * (input.forward ?? 0) - Math.sin(you.yaw) * input.ax)
+      : you.yaw
+    you.vx = Math.cos(dashYaw) * burst
+    you.vz = Math.sin(dashYaw) * burst
+    if (!submerged) you.vy = Math.max(you.vy, 2.1 / Math.sqrt(box.mass))
+    you.biteCd = Math.max(you.biteCd, 0.12)
+  }
+  if (submerged && input.jump && you.y > WATER - 1.15) {
+    you.vy = Math.max(you.vy, 6.4 / Math.sqrt(box.mass))
   }
   if (input.horn && you.windup <= 0 && you.recover <= 0) {
     you.heavy = true
@@ -514,17 +529,18 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   you.windup = Math.max(0, you.windup - dt)
   you.recover = Math.max(0, you.recover - dt)
   you.comboT = Math.max(0, you.comboT - dt)
+  you.biteBuf = Math.max(0, you.biteBuf - dt)
   if (you.comboT <= 0) you.combo = 0
   if (you.windup <= 0 && you.biteT > 0.08 && !you.swing && you.biteCd < 0.08) you.swing = true
   if (you.swing) {
     you.swing = false
     you.combo = you.comboT > 0 ? you.combo + 1 : 1
-    you.comboT = 0.65
+    you.comboT = 0.95
     const heavy = you.heavy || you.combo >= 3
     if (you.combo >= 3) you.combo = 0
     you.heavy = false
-    you.biteCd = heavy ? 0.48 : 0.26
-    you.recover = heavy ? 0.2 : 0.1
+    you.biteCd = heavy ? 0.4 : 0.2
+    you.recover = heavy ? 0.16 : 0.08
     const mine = bodyBox(you.load, you.spent, false, you.species)
     const vols = attackVolumes(you.load, you.spent, false, you.species, you.x, you.y, you.z, you.yaw)
     for (const foe of w.ents) {
@@ -561,10 +577,13 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
       }
     }
   }
-  if (input.bite && you.biteCd <= 0 && you.windup <= 0 && you.recover <= 0 && you.stun <= 0) {
-    you.windup = you.combo >= 2 ? 0.08 : 0.04
-    you.biteT = you.windup + 0.16
-    you.biteCd = 0.05
+  if (input.bite && (you.biteCd > 0 || you.windup > 0 || you.recover > 0 || you.stun > 0)) you.biteBuf = 0.32
+  const wantBite = (input.bite || you.biteBuf > 0) && you.biteCd <= 0 && you.windup <= 0 && you.recover <= 0 && you.stun <= 0
+  if (wantBite) {
+    you.biteBuf = 0
+    you.windup = you.combo >= 2 ? 0.07 : 0.03
+    you.biteT = you.windup + 0.18
+    you.biteCd = 0.04
     const aim = nearestInCone(w, you)
     if (aim) {
       const dx = aim.x - you.x
@@ -762,8 +781,8 @@ export function nearestInCone(w: World, you: Ent): Ent | undefined {
     const dz = foe.z - you.z
     const ahead = dx * Math.cos(you.yaw) + dz * Math.sin(you.yaw)
     const side = -dx * Math.sin(you.yaw) + dz * Math.cos(you.yaw)
-    if (ahead < -0.6 || ahead > 10) continue
-    if (Math.abs(side) > 2.5 + ahead * 0.55) continue
+    if (ahead < -0.8 || ahead > 12) continue
+    if (Math.abs(side) > 3.2 + ahead * 0.7) continue
     if (Math.abs(foe.y - you.y) > 3.6) continue
     const dist = Math.hypot(ahead, side, foe.y - you.y)
     if (dist < score) {
@@ -1135,15 +1154,16 @@ export function upgradeDefense(w: World, uid: number): Buy {
   return { ok: false, reason: 'No such tower' }
 }
 
-export function snapshotWorld(w: World): { columns: { x: number; dug: number; prog: number }[]; nodes: { id: number; mat: string; amount: number; hp: number }[]; bases: Base[] } {
+export function snapshotWorld(w: World): { columns: { x: number; dug: number; prog: number }[]; nodes: { id: number; mat: string; amount: number; hp: number }[]; bases: Base[]; pieces: Piece[] } {
   return {
     columns: w.columns.map((c) => ({ x: c.x, dug: c.dug, prog: c.prog })),
     nodes: w.nodes.map((n) => ({ id: n.id, mat: n.mat, amount: n.amount, hp: n.hp })),
     bases: w.bases.map((b) => ({ ...b, defs: b.defs.map((d) => ({ ...d })) })),
+    pieces: w.pieces.map((p) => ({ ...p })),
   }
 }
 
-export function applyWorldSnapshot(w: World, data: { columns?: { x: number; dug: number; prog: number }[]; nodes?: { id: number; mat: string; amount: number; hp: number }[]; bases?: Base[] }): void {
+export function applyWorldSnapshot(w: World, data: { columns?: { x: number; dug: number; prog: number }[]; nodes?: { id: number; mat: string; amount: number; hp: number }[]; bases?: Base[]; pieces?: Piece[] }): void {
   if (data.columns) {
     for (const saved of data.columns) {
       const col = w.columns.find((c) => c.x === saved.x)
@@ -1177,5 +1197,9 @@ export function applyWorldSnapshot(w: World, data: { columns?: { x: number; dug:
         w.nextId = Math.max(w.nextId, saved.id + 1)
       }
     }
+  }
+  if (data.pieces) {
+    w.pieces = data.pieces.filter((p) => p && typeof p.id === 'number' && typeof p.kind === 'string' && Number.isFinite(p.x))
+    for (const pce of w.pieces) w.nextId = Math.max(w.nextId, pce.id + 1)
   }
 }
