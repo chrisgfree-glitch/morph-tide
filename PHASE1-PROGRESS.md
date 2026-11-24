@@ -106,3 +106,58 @@ dig/cut/break session, or contrast measurement with a WCAG meter.
 Other notes from this pass: the landscape title screen clips the "MORPH"
 word at the top and the controller help at the bottom at 844×390. That was
 not part of the banner fix and was not changed.
+
+## Playable loop pass (2026-11-24, 11:51 AM PT, America/Los_Angeles)
+
+Preview of `e63f059` is READY (not promoted to production, not protection-gated):
+
+- Preview URL: https://evo-back-to-eden-6vkp0thx8-chrisgfree-5870.vercel.app
+- Branch alias: https://evo-back-to-eden-git-coding-guy-phase1-chrisgfree-5870.vercel.app
+- Deployment id: `dpl_Evaf7hjSJViyUcHuKVZo3qG6goVG`
+- Commits on `coding-guy/phase1`: `81f0342`, `54a03c2`, `768c3e7`, `0fba6bc`, `e63f059`
+
+What changed:
+
+- Camera follows faster, pulls in on bite and dash, and probes the terrain so it
+  does not clip underground.
+- Eating and evolving have stronger hit-stop, particle bursts, and a rising EP /
+  Evolved pop. Predators flash orange and pause before they lunge.
+- The HUD walks the first minutes: Eat 5 fish, then Grow lungs, then Dig a den
+  (a new cheap Lean-to built from 2 kelp).
+- Bites, horns, and claws use per-part volumes. `?debug=hit` (or H) draws them.
+- The Strand Colossus is a region gate, not a win overlay. Defeating it opens
+  the inland.
+- Stronger fog and sky color per zone, instanced bubbles, distinct tints on
+  wood/rock nodes, and a 1.35 pixel-ratio cap on phones. ACES + sRGB were
+  already on.
+- The 844×390 title keeps MORPH on screen and can scroll to the help.
+
+`npm run check` and `npm run build` passed, including new volume and gate tests.
+
+### Live preview smoke
+
+Playwright (Chrome + SwiftShader) against the unique preview URL:
+
+- Desktop 1280×800 and phone landscape 844×390: load, Solo start, canvas, HUD
+  goal “Eat 5 fish (0/5)”, banner does not cover Grow or HP.
+  Screenshots: `smoke/preview-desktop-title.png`, `smoke/preview-desktop.png`,
+  `smoke/preview-phone-land-title.png`, `smoke/preview-phone-land.png`.
+- Scripted path: start, lunge-bite a shallows fish (eats 1/5, +4 EP), buy
+  Basic lungs from Evolve, spend 2 kelp on a Lean-to (“Lean-to raised”).
+  Screenshot: `smoke/preview-play.png`.
+
+Not verified: play on a physical phone, camera collision in a deep dug tunnel,
+a long hunt against a telegraphing predator, WCAG contrast, or a 100-player
+world. The scripted eat used a close-up position, not only the natural lunge.
+
+Known issues / leftover for next round:
+
+- At 844×390 the last controller-help line still peeks under the fold; the
+  title can scroll.
+- The scripted play shot can leave Build and Pause open on top of each other
+  (Escape after Evolve). Not a live-play blocker.
+- Volcano traps, full 10-tier presentation, vines as a gather type, and
+  server persistence for 100-player worlds are still later work.
+- `20b4663` lighting (second caustic, sun glint, light shafts) is still missing.
+- Terrain dig still unlocks at tier 3; the early den is the Lean-to build.
+- Persistence is still local to one browser.
