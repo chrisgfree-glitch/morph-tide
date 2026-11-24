@@ -2,6 +2,7 @@ import { starterLoad } from '../shared/catalog'
 import { columnSeconds } from '../shared/dig'
 import { attackVolumes, volumeHits } from '../shared/body'
 import { applyWorldSnapshot, createWorld, playerOf, snapshotWorld, step } from '../shared/sim'
+import { applyGameSave, encodeGameSave, parseGameSave, serializeGameSave } from '../shared/save'
 import { canPlace, placePiece, refundPiece } from '../shared/build'
 import { bodyBreakPower, cellSeconds, chopSeconds, tierOf } from '../shared/rules'
 
@@ -143,3 +144,40 @@ blockedBag.bag.kelp = 0
 const poor = canPlace(createWorld(), blockedBag, 'lean', 10, 1, 0, 0)
 if (poor.ok) throw new Error('lean-to must be red without kelp')
 console.log('lean-to places and refunds; pieces persist')
+
+const kept = createWorld()
+const savedYou = playerOf(kept)
+savedYou.x = 42.5
+savedYou.y = 2.25
+savedYou.z = -3.5
+savedYou.yaw = 1.2
+savedYou.pitch = 0.15
+savedYou.ep = 18
+savedYou.spent = 12
+savedYou.hp = 21
+savedYou.maxHp = 28
+savedYou.air = 9
+savedYou.bag.kelp = 3
+kept.eats = 4
+kept.gateOpen = true
+savedYou.bag.kelp = 2
+const built = placePiece(kept, savedYou, 'lean', savedYou.x + 2, savedYou.y, savedYou.z, 0)
+if (!built.ok) throw new Error(`save fixture lean failed: ${built.reason}`)
+const raw = serializeGameSave(encodeGameSave(kept))
+if (!raw.includes('"x":42.5')) throw new Error('save should include player position')
+const parsed = parseGameSave(raw)
+if (!parsed) throw new Error('parseGameSave failed')
+const restored = createWorld()
+applyGameSave(restored, parsed)
+const back = playerOf(restored)
+if (Math.abs(back.x - 42.5) > 0.001 || Math.abs(back.z - -3.5) > 0.001) throw new Error(`pose not restored: ${back.x},${back.z}`)
+if (back.ep !== 18 || back.spent !== 12 || restored.eats !== 4) throw new Error('progress not restored')
+if (!restored.gateOpen) throw new Error('gateOpen should restore')
+if (restored.pieces.length !== 1 || restored.pieces[0]?.kind !== 'lean') throw new Error('pieces should restore')
+if ((back.bag.kelp ?? 0) !== 0) throw new Error('bag after lean cost should restore')
+back.x = 99
+back.ep = 0
+restored.eats = 0
+applyGameSave(restored, parseGameSave(raw)!)
+if (Math.abs(playerOf(restored).x - 42.5) > 0.001 || playerOf(restored).ep !== 18 || restored.eats !== 4) throw new Error('second load should overwrite later changes')
+console.log('save/load round-trip')
