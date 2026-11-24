@@ -379,4 +379,42 @@ Playwright (Chrome + SwiftShader) at 1280×800 and 844×390:
 
 ### Production
 
-To be filled after the production deploy and retest.
+`main` was fast-forwarded from `1f29345` to `2d61ebe` and pushed. A production
+deployment was created with `target: "production"` of that commit. The game
+tree matches the tested preview (`56a07a2`); later commits are docs only.
+Ready at 3:27 PM PT. Env vars, protection, domains, and secrets were not
+changed.
+
+- Production URL: https://evo-back-to-eden.vercel.app/
+- Also: https://evo-back-to-eden-chrisgfree-5870.vercel.app
+- Deployment id: `dpl_4KmQbDFKTEssuTvMvqKaKY1gbpBg`
+- Commit on `main`: `2d61ebe` (`2d61ebed0a95ec5693c6a9309fa0ddbe3572ccab`)
+- Tested game commit: `56a07a2` (`56a07a28c600448aac6c1d7f913b5c221ba1a770`)
+- Docs: `7c99f9e` adds `docs/GAME-CONCEPT-5-LEVELS.md`; `2d61ebe` records
+  Chris's 3:10 PM PT confirmations (25 hides/wood/rocks/gems, plus kelp/grass).
+
+The same Playwright suite was re-run against production at 1280×800 and
+844×390. Results matched the preview: new game is a guppy, mid-game saves
+load unchanged (desktop old-save again needed a fresh-browser retry after a
+second-context `#solo` timeout, then passed; phone passed first try),
+Select/Pause/Save/Load work, paths B and C passed first try, path A evolve
+passed and eat passed on a closer-mouth retry on desktop (phone first try).
+HQ production look shots show turquoise water, kelp, and rocks:
+`smoke/r4-prod-desktop-look-hq.png`, `smoke/r4-prod-phone-land-look-hq.png`.
+
+Not verified: play on a physical phone or Xbox pad; unassisted early-game
+bites without scripted mouth placement; WCAG contrast; whether light shafts
+read clearly on a real GPU (they are present but subtle in SwiftShader
+shots); live kelp gathering.
+
+Known issues / leftover:
+
+- Some rock faces still read dark under SwiftShader even after the brighten
+  pass; lit faces show moss and stone color.
+- The first-run hint can still say “You are a tiny guppy” after loading a
+  mid-game save in a clean profile, until it is dismissed. The HUD correctly
+  shows the loaded stage (e.g. Steelhead).
+- Unassisted start-of-game bites can still miss.
+- `20b4663` lighting was skipped (not on GitHub or in this repo).
+- Decay, raids, the Apocalypse Tracker, and Cloudflare server deploys were
+  not in this pass.
