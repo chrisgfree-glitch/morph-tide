@@ -1,17 +1,31 @@
 import * as THREE from 'three'
-import { ARM_TYPES, BREAKERS, BUILDINGS, COLOR_NAMES, COLORS, CUTTERS, DEFENSES, FEET, FIN_LINE, GEMS, HORNS, JAWS, TAIL_LINE, TEETH, WING_STYLES } from '../shared/catalog'
-import { buildAt, createWorld, placeDefense, playerOf, step, tryPurchase, type Ent, type Frame, type World } from '../shared/sim'
-import { defenseCap, landOk, tierOf } from '../shared/rules'
+import { ARM_TYPES, BREAKERS, COLOR_NAMES, COLORS, CUTTERS, FEET, FIN_LINE, GEMS, HORNS, JAWS, ROCK_TINT, SKINS, TAIL_LINE, TEETH, TREE_TINT, TIER_SPENT, WING_STYLES, treeById } from '../shared/catalog'
+import { createWorld, nearestInCone, playerOf, step, tryPurchase, type Ent, type Frame, type World } from '../shared/sim'
+import { SAVE_KEY, applyGameSave, encodeGameSave, parseGameSave, serializeGameSave } from '../shared/save'
+import { PIECES, canPlace, costLine, nearestPiece, pieceById, placePiece, refundPiece } from '../shared/build'
+import { fishGoal, growFish, hideStock, tierOf } from '../shared/rules'
 import { audio } from './audio'
+import { attackVolumes, type HitVol } from '../shared/body'
 import { buildCreature, creatureKey, poseCreature } from './mesh'
+import { ChunkWorld } from './chunks'
+import { buildWater, loadPbr, setTerrainQuality } from './world3d'
+import { WATER, groundAt } from '../shared/terrain'
 
-const SAVE = 'evo2.eden.v2'
+const SAVE = SAVE_KEY
 
 export class Game {
   world: World
   playing = false
   paused = false
   evoOpen = false
+  settingsOpen = false
+  selectOpen = false
+  pauseOpen = false
+  quitOpen = false
+  mapOpen = false
+  /** Solo stays false, so the map pauses. A live shard session sets this and the map stays an overlay. */
+  liveMultiplayer = false
+  private evoTab: 'parts' | 'skin' = 'parts'
   buildOpen = false
   name = 'Tidewisp'
   private renderer: THREE.WebGLRenderer
@@ -25,43 +39,92 @@ export class Game {
   private time = 0
   private sun: THREE.DirectionalLight
   private waterU = { value: 0 }
-  private bubbles: THREE.Mesh[] = []
+  private bubbles: THREE.InstancedMesh | null = null
+  private bubbleBases: { x: number; y: number; z: number; s: number }[] = []
+  private nodeGroup = new THREE.Group()
+  private hitDebug: THREE.Mesh[] = []
   private sAx = 0
   private sAy = 0
   private stick = { x: 0, y: 0 }
   private mouseBite = false
   private mouseUp = false
-  private quality: 'high' | 'low'
+  private quality: 'high' | 'mid' | 'low'
+  qualityMode: 'auto' | 'low' | 'mid' | 'high' = 'auto'
+  lookSens = 0.5
+  invertY = false
+  private shoreTold = false
+  private explored = new Set<string>()
+  private mapOffX = 0
+  private mapOffZ = 0
+  private padOn = false
+  private touchForced = false
+  private padPrev: boolean[] = []
+  private focusIndex = 0
+  private navLatch = false
+  private sliderWait = 0
+  private padPromptT = 0
+  private gp = { lx: 0, ly: 0, rx: 0, ry: 0, attack: false, horn: false, dash: false, dig: false, rise: false, dive: false, sprint: false, use: false }
+  private zoom = 1
+  private lockId = 0
+  private buildMode = false
+  private buildIndex = 0
+  private buildYaw = 0
+  private buildFree = false
+  private orbitId = -1
+  private lookPtrs = new Map<number, { x: number; y: number }>()
+  private pieceGroup = new THREE.Group()
+  private ghost = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x88c070, transparent: true, opacity: 0.45, depthWrite: false }))
   private camPos = new THREE.Vector3(8, 4, 9)
   private lookPos = new THREE.Vector3(10, 2, 0)
   private camGoal = new THREE.Vector3()
   private lookGoal = new THREE.Vector3()
-  private camDist = 8.4
+  private camDist = 6.4
+  private firstPerson = false
+  private yaw = 0.4
+  private pitch = 0.05
+  private yawT = 0.4
+  private pitchT = 0.05
+  private lookId = -1
+  private riseHeld = false
+  private diveHeld = false
+  private resTick = 0
+  private lastNow = performance.now()
+  private chunks!: ChunkWorld
+  private waterMesh!: THREE.Mesh
   private hintLeft = 0
+  private debug = false
+  private preview?: THREE.WebGLRenderer
+  private previewScene?: THREE.Scene
+  private debugLine: THREE.LineSegments
+  private debrisMeshes: THREE.Mesh[] = []
+  private bursts: { m: THREE.Mesh; v: THREE.Vector3; life: number }[] = []
   private dashT = 0
   private hornT = 0
   private actHeld = false
   private cd = { dash: 0, horn: 0, act: 0, build: 0 }
   private punch = { t: 1, dur: 0.22, amp: 0, ax: 1, ay: 0.35 }
+  private saveAcc = 0
+  private lastSaved: string | null = null
+  private toastT = 0
 
   constructor(canvas: HTMLCanvasElement) {
     this.world = createWorld()
     const coarse = window.matchMedia('(pointer: coarse)').matches || window.innerHeight <= 520
-    this.quality = coarse ? 'low' : 'high'
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.quality === 'high', powerPreference: 'high-performance' })
+    this.quality = coarse ? 'mid' : 'high'
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' })
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
-    this.renderer.toneMappingExposure = 1.05
-    this.renderer.shadowMap.enabled = this.quality === 'high'
+    this.renderer.toneMappingExposure = 1.12
+    this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
-    this.renderer.setPixelRatio(this.quality === 'high' ? Math.min(1.5, window.devicePixelRatio || 1) : 1)
+    this.renderer.setPixelRatio(this.pixelCap())
     this.renderer.setClearColor(0x1c3a42)
     this.scene.fog = new THREE.Fog(0x7f9698, 16, 46)
     this.scene.background = skyTexture()
-    this.scene.add(new THREE.HemisphereLight(0xffe2c4, 0x3a5560, 0.72))
-    this.sun = new THREE.DirectionalLight(0xffd7a8, 1.45)
+    this.scene.add(new THREE.HemisphereLight(0xffe2c4, 0x3a5560, 0.85))
+    this.sun = new THREE.DirectionalLight(0xffe4bc, 1.7)
     this.sun.position.set(12, 18, 10)
-    this.sun.castShadow = this.quality === 'high'
+    this.sun.castShadow = true
     this.sun.shadow.mapSize.set(1024, 1024)
     this.sun.shadow.camera.near = 2
     this.sun.shadow.camera.far = 48
@@ -75,29 +138,69 @@ export class Game {
     cool.position.set(-8, 4, -6)
     this.scene.add(cool)
     this.scene.add(this.decor)
+    this.scene.add(this.nodeGroup)
+    this.scene.add(this.pieceGroup)
+    this.ghost.visible = false
+    this.scene.add(this.ghost)
+    this.debug = new URLSearchParams(location.search).get('debug') === 'hit'
+    const dbg = new THREE.BufferGeometry()
+    dbg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(400 * 3), 3))
+    this.debugLine = new THREE.LineSegments(dbg, new THREE.LineBasicMaterial({ color: 0xb7e2c2 }))
+    this.debugLine.frustumCulled = false
+    this.debugLine.visible = false
+    this.scene.add(this.debugLine)
+    this.load()
     this.paintWorld()
     this.resize()
     window.addEventListener('resize', () => this.resize())
     window.addEventListener('keydown', (e) => {
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) e.preventDefault()
+      const inMenu = this.menuTargets().length > 0
+      if (inMenu && (e.key === 'ArrowUp' || e.key === 'ArrowLeft')) {
+        this.moveFocus(-1)
+        return
+      }
+      if (inMenu && (e.key === 'ArrowDown' || e.key === 'ArrowRight')) {
+        this.moveFocus(1)
+        return
+      }
+      if (inMenu && (e.key === 'Enter')) {
+        this.activateFocus(0)
+        return
+      }
       this.keys.add(e.key.toLowerCase())
-      if (e.key === 'e' || e.key === 'E') this.toggleEvo()
-      if (e.key === 'b' || e.key === 'B') this.toggleBuild()
-      if (e.key === 'Escape') this.paused = !this.paused
-      if (e.key === 'm' || e.key === 'M') this.muted()
+      if ((e.key === 'e' || e.key === 'E') && !this.buildMode && !inMenu) this.toggleEvo()
+      if ((e.key === 'b' || e.key === 'B') && !inMenu) this.toggleBuild()
+      if (e.key === 'Escape') {
+        if (!this.closeTopMenu() && this.playing) this.toggleSelect(true)
+      }
+      if ((e.key === 'm' || e.key === 'M') && !(e.target instanceof HTMLInputElement) && !inMenu) this.toggleMap()
+      if (e.key === 'h' || e.key === 'H') this.debug = !this.debug
+      if (e.key === 'v' || e.key === 'V') this.firstPerson = !this.firstPerson
+      if (e.key === 'Tab') {
+        e.preventDefault()
+        this.toggleLock()
+      }
+      if (this.buildMode && (e.key === 'q' || e.key === 'Q' || e.key === 'e' || e.key === 'E' || e.key === 'r' || e.key === 'R')) {
+        this.buildYaw += e.key.toLowerCase() === 'q' ? Math.PI / 2 : -Math.PI / 2
+      } else if ((e.key === 'q' || e.key === 'Q') && this.cd.dash <= 0) {
+        this.cd.dash = 1.15
+        this.dashT = 0.2
+      }
+      if (this.buildMode && (e.key === '[' || e.key === ']')) this.cyclePiece(e.key === ']' ? 1 : -1)
     })
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()))
     this.bindUi()
-    this.load()
     requestAnimationFrame(() => this.frame())
-  }
-
-  private muted(): void {
-    audio.muted = !audio.muted
   }
 
   private phoneLayout(): boolean {
     return window.matchMedia('(pointer: coarse)').matches || window.innerHeight <= 520
+  }
+
+  private pixelCap(): number {
+    const dpr = window.devicePixelRatio || 1
+    return Math.min(this.phoneLayout() ? 1.35 : 2, dpr)
   }
 
   private resize(): void {
@@ -105,93 +208,83 @@ export class Game {
     const h = window.innerHeight
     const aspect = w / Math.max(1, h)
     const wide = aspect >= 1.25
-    this.camera.fov = wide ? 33 : 48
+    this.camera.fov = wide ? 68 : 58
     this.camera.aspect = aspect
     this.camera.updateProjectionMatrix()
-    this.camDist = wide ? 8.4 : 14
+    this.camDist = this.firstPerson ? 0.45 : wide ? 6.2 : 8
     const fog = this.scene.fog as THREE.Fog
     fog.near = wide ? 24 : 14
     fog.far = wide ? 70 : 42
     this.renderer.setSize(w, h, false)
-    const touch = document.getElementById('touch')
-    if (touch) touch.hidden = !this.playing || !this.phoneLayout()
-    document.getElementById('t-pause')?.toggleAttribute('hidden', !this.playing || !this.phoneLayout())
+    this.applyTouchVisibility()
     document.getElementById('t-evo')?.toggleAttribute('hidden', !this.playing || !this.phoneLayout())
+    document.getElementById('t-settings')?.toggleAttribute('hidden', !this.playing)
     const portrait = h > w && w <= 540
     document.getElementById('rotate')?.classList.toggle('on', portrait)
   }
 
   private paintWorld(): void {
     const g = this.decor
-    g.add(ribbon(0, 72, 56, (x) => 0.15 + Math.sin(x * 0.22) * 0.22 + (x / 72) * 0.45, (x, y) => (x > 52 || y > 0.55 ? 0xc2ae8e : y > 0.35 ? 0x8a7d68 : 0x3e534c)))
-    g.add(ribbon(64, 220, 70, (x) => 0.72 + Math.sin(x * 0.16) * 0.28 + Math.sin(x * 0.05) * 0.2, (x, y) => {
-      if (x > 168) return y > 1.15 ? 0x6e6862 : 0x8a4638
-      return y > 1.05 ? 0x6d8458 : 0x6a5340
-    }))
-    const waterGeo = new THREE.PlaneGeometry(76, 8, 36, 8)
-    waterGeo.rotateX(-Math.PI / 2)
-    const water = new THREE.Mesh(waterGeo, waterMat(this.waterU))
-    water.position.set(36, 5.7, 0)
-    water.name = 'water'
-    g.add(water)
-    const caustic = new THREE.Mesh(new THREE.PlaneGeometry(70, 7), causticMat(this.waterU))
-    caustic.rotation.x = -Math.PI / 2
-    caustic.position.set(34, 0.62, 0)
-    g.add(caustic)
-    const rockMat = new THREE.MeshStandardMaterial({ color: 0x6d726c, roughness: 0.9, metalness: 0.04 })
-    const sandMat = new THREE.MeshStandardMaterial({ color: 0xb7a488, roughness: 0.95, metalness: 0 })
-    const kelpMat = new THREE.MeshStandardMaterial({ color: 0x5e7a58, roughness: 0.7, metalness: 0.02 })
-    const mossMat = new THREE.MeshStandardMaterial({ color: 0x6a7d52, roughness: 0.86, metalness: 0 })
+    this.chunks = new ChunkWorld(this.quality)
+    g.add(this.chunks.group)
+    this.chunks.update(8, 0)
+    this.waterMesh = buildWater(this.waterU)
+    g.add(this.waterMesh)
+    void loadPbr(this.quality === 'low' ? 'low' : 'high', this.chunks, this.waterMesh).catch(() => {
+      /* vertex-colored chunks remain if a texture is missing */
+    })
     const lavaMat = new THREE.MeshStandardMaterial({ color: 0x8a4634, roughness: 0.55, metalness: 0.05, emissive: 0x5a2418, emissiveIntensity: 0.45 })
-    for (const x of [12, 24, 37, 49, 61]) {
-      const rock = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), x > 48 ? sandMat : rockMat)
-      rock.scale.set(1.4, 0.7, 1.1)
-      rock.position.set(x, 0.55 + (x % 3) * 0.15, (x % 5) - 2)
-      rock.castShadow = true
-      rock.receiveShadow = true
-      g.add(rock)
-      const kelp = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 1.1, 3, 6), kelpMat)
-      kelp.position.set(x + 1.4, 1.2, 0.4)
-      kelp.rotation.z = 0.2
-      g.add(kelp)
-    }
-    for (const x of [78, 96, 112, 130, 148]) {
-      const bush = new THREE.Mesh(new THREE.SphereGeometry(0.7, 12, 8), mossMat)
-      bush.scale.set(1.3, 0.7, 1)
-      bush.position.set(x, 1.35, (x % 4) - 1.5)
-      bush.castShadow = true
-      g.add(bush)
-    }
     for (const x of [176, 188, 202]) {
-      const vent = new THREE.Mesh(new THREE.ConeGeometry(0.7, 1.6, 10), lavaMat)
+      const vent = new THREE.Mesh(new THREE.SphereGeometry(0.7, 12, 8), lavaMat)
+      vent.scale.set(1, 1.6, 1)
       vent.position.set(x, 1.5, 0)
       vent.castShadow = true
       g.add(vent)
     }
-    const count = this.quality === 'high' ? 18 : 8
-    const bubbleMat = new THREE.MeshStandardMaterial({ color: 0xd5e4e0, roughness: 0.15, metalness: 0.05, transparent: true, opacity: 0.45 })
-    for (let i = 0; i < count; i++) {
-      const b = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), bubbleMat)
-      b.position.set(6 + (i * 3.7) % 58, 0.6 + (i % 5), (i % 3) - 1)
-      b.userData.baseX = b.position.x
-      g.add(b)
-      this.bubbles.push(b)
+    this.spawnBubbles(g)
+  }
+
+  private spawnBubbles(g: THREE.Group): void {
+    if (this.bubbles) {
+      this.bubbles.removeFromParent()
+      this.bubbles.geometry.dispose()
     }
+    const count = this.quality === 'high' ? 40 : this.quality === 'mid' ? 22 : 10
+    const bubbleMat = new THREE.MeshStandardMaterial({ color: 0xd5e4e0, roughness: 0.15, metalness: 0.05, transparent: true, opacity: 0.45 })
+    const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.08, 8, 6), bubbleMat, count)
+    mesh.frustumCulled = false
+    this.bubbleBases = []
+    const dummy = new THREE.Object3D()
+    for (let i = 0; i < count; i++) {
+      const base = { x: 6 + (i * 3.7) % 58, y: 0.6 + (i % 7) * 0.55, z: (i % 5) - 2, s: 0.7 + (i % 4) * 0.18 }
+      this.bubbleBases.push(base)
+      dummy.position.set(base.x, base.y, base.z)
+      dummy.scale.setScalar(base.s)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(i, dummy.matrix)
+    }
+    g.add(mesh)
+    this.bubbles = mesh
   }
 
   private applyQuality(): void {
-    const high = this.quality === 'high'
-    this.renderer.shadowMap.enabled = high
-    this.sun.castShadow = high
-    this.renderer.setPixelRatio(high ? Math.min(1.5, window.devicePixelRatio || 1) : 1)
+    this.renderer.setPixelRatio(this.pixelCap())
+    const shadows = this.quality !== 'low'
+    this.renderer.shadowMap.enabled = shadows
+    this.sun.castShadow = shadows
+    const map = this.quality === 'high' ? 2048 : 1024
+    this.sun.shadow.mapSize.set(map, map)
+    if (this.chunks) {
+      this.chunks.quality = this.quality
+      setTerrainQuality(this.chunks, this.waterMesh, this.quality === 'low' ? 'low' : 'high')
+    }
     this.resize()
-    const btn = document.getElementById('quality')
-    if (btn) btn.textContent = high ? 'Detail: high' : 'Detail: low'
+    const pick = document.getElementById('set-quality') as HTMLSelectElement | null
+    if (pick && pick.value !== this.qualityMode) pick.value = this.qualityMode
   }
 
   private bindUi(): void {
     const solo = document.getElementById('solo')
-    const online = document.getElementById('online')
     const name = document.getElementById('name') as HTMLInputElement | null
     solo?.addEventListener('click', () => {
       audio.unlock()
@@ -200,49 +293,131 @@ export class Game {
       playerOf(this.world).name = this.name
       this.start()
     })
-    online?.addEventListener('click', () => {
-      audio.unlock()
-      const url = (import.meta.env.VITE_EVO_WORKER as string | undefined) || ''
-      const msg = document.getElementById('title-msg')
-      if (!url) {
-        if (msg) msg.textContent = 'No worker URL set (VITE_EVO_WORKER). Playing the local sea instead.'
-        this.name = name?.value.trim() || 'Tidewisp'
-        playerOf(this.world).name = this.name
-        this.start()
-        return
-      }
-      void this.tryOnline(url)
-    })
     document.getElementById('evo-close')?.addEventListener('click', () => this.toggleEvo(false))
     document.getElementById('build-close')?.addEventListener('click', () => this.toggleBuild(false))
+    document.getElementById('settings-close')?.addEventListener('click', () => this.togglePause(false))
+    document.getElementById('t-settings')?.addEventListener('click', () => this.toggleSelect())
+    document.getElementById('select-pause')?.addEventListener('click', () => this.togglePause(true))
+    document.getElementById('select-evolve')?.addEventListener('click', () => this.openEvolveFromSelect())
+    document.getElementById('select-quit')?.addEventListener('click', () => this.toggleQuit(true))
+    document.getElementById('pause-resume')?.addEventListener('click', () => this.resumePlay())
+    document.getElementById('pause-save')?.addEventListener('click', () => this.manualSave())
+    document.getElementById('pause-load')?.addEventListener('click', () => this.manualLoad())
+    document.getElementById('quit-save')?.addEventListener('click', () => this.quitToTitle(true))
+    document.getElementById('quit-quit')?.addEventListener('click', () => this.quitToTitle(false))
+    document.getElementById('quit-cancel')?.addEventListener('click', () => this.toggleQuit(false))
+    document.getElementById('t-map')?.addEventListener('click', () => this.toggleMap())
+    document.getElementById('map-close')?.addEventListener('click', () => this.toggleMap(false))
+    this.renderer.domElement.addEventListener('pointerdown', () => this.revealTouch())
+    document.getElementById('grow')?.addEventListener('click', () => this.growStage())
+    document.getElementById('set-restart')?.addEventListener('click', () => this.restart())
+    document.getElementById('set-sens')?.addEventListener('input', (e) => {
+      this.lookSens = Number((e.target as HTMLInputElement).value) || 1
+    })
+    document.getElementById('set-invert')?.addEventListener('change', (e) => {
+      this.invertY = (e.target as HTMLInputElement).checked
+    })
+    document.getElementById('set-vol')?.addEventListener('input', (e) => {
+      audio.setVolume(Number((e.target as HTMLInputElement).value))
+      audio.muted = audio.volume <= 0
+      const mute = document.getElementById('set-mute')
+      if (mute) mute.textContent = audio.muted ? 'Unmute' : 'Mute'
+    })
+    document.getElementById('set-mute')?.addEventListener('click', () => {
+      audio.muted = !audio.muted
+      const mute = document.getElementById('set-mute')
+      if (mute) mute.textContent = audio.muted ? 'Unmute' : 'Mute'
+    })
+    document.getElementById('set-quality')?.addEventListener('change', (e) => {
+      const mode = (e.target as HTMLSelectElement).value as Game['qualityMode']
+      this.qualityMode = mode
+      if (mode !== 'auto') this.quality = mode
+      else this.quality = this.phoneLayout() ? 'mid' : 'high'
+      this.applyQuality()
+    })
     document.getElementById('resume')?.addEventListener('click', () => {
+      if (this.world.won) {
+        this.restart()
+        return
+      }
       this.world.over = false
       const you = playerOf(this.world)
       you.alive = true
       you.hp = you.maxHp
       you.ep = Math.max(0, you.ep - 5)
-      if (!landOk(you.load, you.spent)) you.x = 8
+      you.x = 8
+      you.y = 2.4
+      you.z = 0
       this.save()
     })
     this.paintColors()
     this.touch()
     this.guardSurface()
     this.applyQuality()
-    document.getElementById('quality')?.addEventListener('pointerup', (e) => {
-      e.preventDefault()
-      this.quality = this.quality === 'high' ? 'low' : 'high'
-      this.applyQuality()
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.save()
     })
-    document.getElementById('full')?.addEventListener('pointerup', (e) => {
-      e.preventDefault()
-      void this.enterWide()
-    })
+    window.addEventListener('pagehide', () => this.save())
     const view = this.renderer.domElement
-    view.addEventListener('pointerdown', (e) => {
-      if (e.pointerType === 'mouse' && e.button === 0) this.mouseBite = true
+    view.addEventListener('click', () => {
+      if (this.phoneLayout() || !this.playing) return
+      if (document.pointerLockElement !== view) void view.requestPointerLock()
     })
-    view.addEventListener('pointerup', () => {
+    document.addEventListener('mousemove', (e) => {
+      if (document.pointerLockElement !== view && this.orbitId < 0) return
+      if (document.pointerLockElement === view) this.applyLook(e.movementX, e.movementY, 0.00115)
+    })
+    view.addEventListener('wheel', (e) => {
+      if (!this.playing) return
+      e.preventDefault()
+      this.zoom = Math.max(0.5, Math.min(1.7, this.zoom * (e.deltaY > 0 ? 1.08 : 0.92)))
+    }, { passive: false })
+    const look = document.getElementById('look')
+    look?.addEventListener('pointerdown', (e) => {
+      if (!this.playing) return
+      this.lookId = e.pointerId
+      look.setPointerCapture(e.pointerId)
+    })
+    look?.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== this.lookId) return
+      this.applyLook(e.movementX, e.movementY, 0.0024)
+    })
+    const endLook = (e: PointerEvent) => {
+      if (e.pointerId === this.lookId) this.lookId = -1
+    }
+    look?.addEventListener('pointerup', endLook)
+    look?.addEventListener('pointercancel', endLook)
+    document.getElementById('view')?.addEventListener('pointerup', (e) => {
+      e.preventDefault()
+      this.firstPerson = !this.firstPerson
+    })
+    view.addEventListener('pointerdown', (e) => {
+      this.lookPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (e.pointerType === 'mouse' && e.button === 1) this.toggleLock()
+      if (e.pointerType === 'mouse' && e.button === 2) {
+        this.orbitId = e.pointerId
+        view.setPointerCapture(e.pointerId)
+      }
+      if (e.pointerType === 'mouse' && e.button === 0 && document.pointerLockElement === view) {
+        if (this.buildMode) this.confirmPlace()
+        else this.mouseBite = true
+      }
+    })
+    view.addEventListener('pointermove', (e) => {
+      const prev = this.lookPtrs.get(e.pointerId)
+      if (prev) {
+        if (e.pointerId === this.orbitId || this.lookPtrs.size >= 2) this.applyLook(e.movementX, e.movementY, this.lookPtrs.size >= 2 ? 0.003 : 0.0024)
+        this.lookPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      }
+    })
+    view.addEventListener('pointerup', (e) => {
+      this.lookPtrs.delete(e.pointerId)
+      if (e.pointerId === this.orbitId) this.orbitId = -1
       this.mouseUp = true
+    })
+    view.addEventListener('pointercancel', (e) => {
+      this.lookPtrs.delete(e.pointerId)
+      if (e.pointerId === this.orbitId) this.orbitId = -1
     })
   }
 
@@ -252,7 +427,7 @@ export class Game {
       if (t?.closest('input, textarea, #title, .panel, #overlay')) return
       e.preventDefault()
     })
-    const nodes = document.querySelectorAll('canvas, #stick, #t-bite, #t-dash, #t-horn, #t-act, #t-build')
+    const nodes = document.querySelectorAll('canvas, #stick, #t-bite, #t-up, #t-dive, #t-dash, #t-horn, #t-act, #t-build')
     nodes.forEach((el) => {
       el.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false })
       el.addEventListener('pointerdown', (e) => {
@@ -307,6 +482,8 @@ export class Game {
       el.addEventListener('pointerleave', up)
     }
     hold('t-bite', () => this.keys.add('j'), () => this.keys.delete('j'))
+    hold('t-up', () => { this.riseHeld = true }, () => { this.riseHeld = false })
+    hold('t-dive', () => { this.diveHeld = true }, () => { this.diveHeld = false })
     hold('t-act', () => {
       this.actHeld = true
       if (this.cd.act <= 0) this.cd.act = 0.35
@@ -337,12 +514,6 @@ export class Game {
     document.getElementById('t-evo')?.addEventListener('pointerup', (e) => {
       e.preventDefault()
       this.toggleEvo()
-    })
-    document.getElementById('t-pause')?.addEventListener('pointerup', (e) => {
-      e.preventDefault()
-      this.paused = !this.paused
-      this.world.banner = this.paused ? 'Paused' : ''
-      this.world.bannerT = this.paused ? 60 : 0
     })
     const stick = document.getElementById('stick')
     const knob = document.getElementById('knob')
@@ -378,28 +549,252 @@ export class Game {
     stick.addEventListener('pointercancel', end)
   }
 
-  private async tryOnline(url: string): Promise<void> {
-    const msg = document.getElementById('title-msg')
-    if (msg) msg.textContent = 'Reaching the living world…'
-    try {
-      const ws = new WebSocket(url.replace(/^http/, 'ws') + '/ws')
-      const ok = await new Promise<boolean>((resolve) => {
-        const timer = window.setTimeout(() => resolve(false), 4000)
-        ws.onopen = () => {
-          window.clearTimeout(timer)
-          resolve(true)
-        }
-        ws.onerror = () => resolve(false)
-      })
-      if (!ok) throw new Error('offline')
-      ws.close()
-      if (msg) msg.textContent = 'Worker answered. This build keeps the shard sim local until you deploy and set the URL for live sync. Starting offline-safe play.'
-    } catch {
-      if (msg) msg.textContent = 'The shard is quiet. Playing alone on this shore.'
+  private applyLook(dx: number, dy: number, scale: number): void {
+    this.yawT -= dx * scale * this.lookSens
+    const pitchDelta = (this.invertY ? dy : -dy) * scale * 0.7 * this.lookSens
+    this.pitchT = Math.max(-1.05, Math.min(1.05, this.pitchT + pitchDelta))
+  }
+
+  private easeLook(dt: number): void {
+    const k = 1 - Math.exp(-dt * 9)
+    this.yaw += (this.yawT - this.yaw) * k
+    this.pitch += (this.pitchT - this.pitch) * k
+  }
+
+  growStage(): void {
+    const you = playerOf(this.world)
+    const result = growFish(you.ep, you.spent)
+    this.world.banner = result.reason
+    this.world.bannerT = 4
+    if (!result.ok) {
+      audio.blip('hurt')
+      return
     }
-    this.name = (document.getElementById('name') as HTMLInputElement | null)?.value.trim() || 'Tidewisp'
-    playerOf(this.world).name = this.name
-    this.start()
+    you.ep = result.ep
+    you.spent = result.spent
+    this.keysigs.delete(you.id)
+    this.feel('evolve')
+    this.save()
+    if (this.evoOpen) this.renderEvo()
+  }
+
+  toggleSelect(force?: boolean): void {
+    if (!this.playing && force !== false) return
+    const next = force ?? !this.selectOpen
+    if (!next) {
+      this.toggleQuit(false)
+      this.togglePause(false)
+    }
+    this.selectOpen = next
+    const el = document.getElementById('select')
+    if (el) el.hidden = !this.selectOpen
+    if (this.selectOpen) this.focusIndex = 0
+    this.syncPause()
+    this.markFocus()
+  }
+
+  togglePause(force?: boolean): void {
+    const next = force ?? !this.pauseOpen
+    this.pauseOpen = next
+    this.settingsOpen = next
+    const el = document.getElementById('settings')
+    if (el) el.hidden = !this.pauseOpen
+    if (this.pauseOpen) {
+      this.selectOpen = true
+      const sel = document.getElementById('select')
+      if (sel) sel.hidden = true
+      this.focusIndex = 0
+    } else {
+      const sel = document.getElementById('select')
+      if (sel) sel.hidden = !this.selectOpen
+    }
+    this.syncPause()
+    this.markFocus()
+  }
+
+  toggleQuit(force?: boolean): void {
+    const next = force ?? !this.quitOpen
+    this.quitOpen = next
+    const el = document.getElementById('quit-ask')
+    if (el) el.hidden = !this.quitOpen
+    if (this.quitOpen) {
+      this.selectOpen = true
+      const sel = document.getElementById('select')
+      if (sel) sel.hidden = true
+      this.focusIndex = 0
+    } else {
+      const sel = document.getElementById('select')
+      if (sel) sel.hidden = !this.selectOpen
+    }
+    this.syncPause()
+    this.markFocus()
+  }
+
+  private openEvolveFromSelect(): void {
+    this.selectOpen = true
+    document.getElementById('select')?.setAttribute('hidden', '')
+    this.toggleEvo(true)
+    this.syncPause()
+  }
+
+  private resumePlay(): void {
+    this.toggleQuit(false)
+    this.togglePause(false)
+    this.toggleEvo(false)
+    this.toggleSelect(false)
+  }
+
+  /** Close the topmost submenu or Select. Returns true if something closed. */
+  closeTopMenu(): boolean {
+    if (this.evoOpen) {
+      this.toggleEvo(false)
+      if (this.selectOpen) {
+        const sel = document.getElementById('select')
+        if (sel) sel.hidden = false
+        this.focusIndex = 0
+        this.markFocus()
+      }
+      this.syncPause()
+      return true
+    }
+    if (this.quitOpen) {
+      this.toggleQuit(false)
+      return true
+    }
+    if (this.pauseOpen) {
+      this.togglePause(false)
+      return true
+    }
+    if (this.mapOpen) {
+      this.toggleMap(false)
+      return true
+    }
+    if (this.buildMode) {
+      this.toggleBuild(false)
+      return true
+    }
+    if (this.selectOpen) {
+      this.toggleSelect(false)
+      return true
+    }
+    return false
+  }
+
+  private showToast(text: string): void {
+    const el = document.getElementById('save-toast')
+    if (el) {
+      el.textContent = text
+      el.hidden = false
+    }
+    this.toastT = 1.6
+  }
+
+  manualSave(): boolean {
+    this.save()
+    this.showToast('Saved')
+    return true
+  }
+
+  manualLoad(): boolean {
+    const raw = this.lastSaved ?? (typeof localStorage !== 'undefined' ? localStorage.getItem(SAVE) : null)
+    if (!raw) {
+      this.showToast('No save')
+      return false
+    }
+    const data = parseGameSave(raw)
+    if (!data) {
+      this.showToast('No save')
+      return false
+    }
+    applyGameSave(this.world, data)
+    this.lastSaved = serializeGameSave(data)
+    const you = playerOf(this.world)
+    this.yaw = you.yaw
+    this.yawT = you.yaw
+    this.pitch = you.pitch
+    this.pitchT = you.pitch
+    this.keysigs.clear()
+    this.showToast('Loaded')
+    return true
+  }
+
+  quitToTitle(saveFirst: boolean): void {
+    if (saveFirst) this.save()
+    else if (this.lastSaved) {
+      const data = parseGameSave(this.lastSaved)
+      if (data) applyGameSave(this.world, data)
+    }
+    this.goToTitle()
+  }
+
+  goToTitle(): void {
+    this.playing = false
+    this.resumePlay()
+    this.buildMode = false
+    this.ghost.visible = false
+    document.getElementById('build-tray')?.setAttribute('hidden', '')
+    document.getElementById('hud')?.setAttribute('hidden', '')
+    document.getElementById('map')?.setAttribute('hidden', '')
+    document.getElementById('overlay')?.setAttribute('hidden', '')
+    document.getElementById('pad-map')?.setAttribute('hidden', '')
+    document.getElementById('save-toast')?.setAttribute('hidden', '')
+    this.toastT = 0
+    document.getElementById('title')?.removeAttribute('hidden')
+    this.applyTouchVisibility()
+    this.syncPause()
+  }
+
+  toggleSettings(force?: boolean): void {
+    if (force === false) this.resumePlay()
+    else this.toggleSelect(true)
+  }
+
+  toggleMap(force?: boolean): void {
+    if (!this.playing && force !== false) return
+    this.mapOpen = force ?? !this.mapOpen
+    const el = document.getElementById('map')
+    if (el) el.hidden = !this.mapOpen
+    if (!this.mapOpen) {
+      this.mapOffX = 0
+      this.mapOffZ = 0
+    }
+    this.syncPause()
+    if (this.mapOpen) this.drawMap()
+  }
+
+  /** Solo pauses while the map is open. Multiplayer keeps the world running under the overlay. */
+  private syncPause(): void {
+    this.paused = this.selectOpen || this.pauseOpen || this.quitOpen || this.evoOpen || (this.mapOpen && !this.liveMultiplayer)
+  }
+
+  restart(): void {
+    for (const group of this.meshes.values()) group.removeFromParent()
+    this.meshes.clear()
+    this.keysigs.clear()
+    this.world = createWorld()
+    this.playing = false
+    this.paused = false
+    this.settingsOpen = false
+    this.selectOpen = false
+    this.pauseOpen = false
+    this.quitOpen = false
+    this.mapOpen = false
+    this.explored.clear()
+    document.getElementById('map')?.setAttribute('hidden', '')
+    this.shoreTold = false
+    this.evoOpen = false
+    this.buildOpen = false
+    this.yaw = 0.4
+    this.pitch = 0.05
+    this.yawT = 0.4
+    this.pitchT = 0.05
+    for (const id of ['settings', 'select', 'quit-ask', 'save-toast', 'evo', 'build', 'hud', 'overlay']) document.getElementById(id)?.setAttribute('hidden', '')
+    document.getElementById('title')?.removeAttribute('hidden')
+    try {
+      localStorage.removeItem(SAVE)
+    } catch {
+      /* ignore */
+    }
   }
 
   start(): void {
@@ -412,9 +807,9 @@ export class Game {
     if (hint && !localStorage.getItem('evo2.hinted')) {
       hint.hidden = false
       hint.textContent = touch
-        ? 'The stick moves every way, including up and down. Bite is the big button. Dash, horn, dig or gather, and build arc beside it.'
-        : 'WASD swims. W rises. Click to bite. E evolve, F dig, G gather.'
-      this.hintLeft = 7
+        ? 'Eat 5 fish to start. The left stick steers. Drag the right side to look. Attack locks on and lunges. When a predator flashes, swim aside.'
+        : 'Eat 5 fish to start. Mouse looks, click bites, WASD steers. E evolves. When a predator flashes, dart aside.'
+      this.hintLeft = 8
       localStorage.setItem('evo2.hinted', '1')
     }
     this.save()
@@ -426,14 +821,115 @@ export class Game {
     if (!el) return
     el.hidden = !this.evoOpen
     if (this.evoOpen) this.renderEvo()
+    else if (this.selectOpen && !this.pauseOpen && !this.quitOpen) {
+      const sel = document.getElementById('select')
+      if (sel) sel.hidden = false
+      this.focusIndex = 0
+      this.markFocus()
+    }
+    this.syncPause()
   }
 
   toggleBuild(force?: boolean): void {
-    this.buildOpen = force ?? !this.buildOpen
-    const el = document.getElementById('build')
-    if (!el) return
-    el.hidden = !this.buildOpen
-    if (this.buildOpen) this.renderBuild()
+    this.buildMode = force ?? !this.buildMode
+    this.buildOpen = false
+    document.getElementById('build')?.setAttribute('hidden', '')
+    const tray = document.getElementById('build-tray')
+    if (tray) tray.hidden = !this.buildMode
+    this.ghost.visible = this.buildMode
+    if (this.buildMode) this.renderBuild()
+  }
+
+  toggleLock(): void {
+    if (this.lockId) {
+      this.lockId = 0
+      return
+    }
+    const you = playerOf(this.world)
+    const aim = nearestInCone(this.world, you)
+    this.lockId = aim?.id ?? 0
+    if (this.lockId) this.world.banner = `Locked · ${aim?.name ?? 'prey'}`
+    this.world.bannerT = this.lockId ? 1.4 : 0
+  }
+
+  private cyclePiece(dir: number): void {
+    this.buildIndex = (this.buildIndex + dir + PIECES.length) % PIECES.length
+    this.renderBuild()
+  }
+
+  private aimPoint(you: Ent): { x: number; y: number; z: number } {
+    const dist = 2.3
+    const x = you.x + Math.cos(you.yaw) * dist
+    const z = you.z + Math.sin(you.yaw) * dist
+    const y = you.y
+    return { x, y, z }
+  }
+
+  private confirmPlace(): void {
+    const you = playerOf(this.world)
+    const def = PIECES[this.buildIndex]
+    if (!def) return
+    const aim = this.aimPoint(you)
+    const result = placePiece(this.world, you, def.id, aim.x, aim.y, aim.z, you.yaw + this.buildYaw, this.buildFree)
+    this.world.banner = result.reason
+    this.world.bannerT = 2
+    if (result.ok) {
+      this.feel('dig')
+      this.buildFree = false
+      if (def.base && result.piece) this.attachShelter(def.name, result.piece.x, you)
+      this.save()
+    } else audio.blip('hurt')
+    this.renderBuild()
+  }
+
+  private pickupPiece(): boolean {
+    const you = playerOf(this.world)
+    const aim = this.aimPoint(you)
+    const near = nearestPiece(this.world, aim.x, you.y, aim.z, 2.8) ?? nearestPiece(this.world, you.x, you.y, you.z, 2.2)
+    if (!near) return false
+    const result = refundPiece(this.world, you, near.id)
+    this.world.banner = result.reason
+    this.world.bannerT = 2
+    if (result.ok) {
+      this.feel('gather')
+      const idx = PIECES.findIndex((p) => p.id === near.kind)
+      if (idx >= 0) this.buildIndex = idx
+      this.buildYaw = near.yaw - you.yaw
+      this.buildFree = true
+      const def = pieceById(near.kind)
+      if (def?.base) {
+        const i = this.world.bases.findIndex((b) => b.owner === you.id && Math.abs(b.x - near.x) < 1.4 && b.name === def.name)
+        if (i >= 0) this.world.bases.splice(i, 1)
+      }
+      if (!this.buildMode) this.toggleBuild(true)
+      this.save()
+    } else audio.blip('hurt')
+    this.renderBuild()
+    return result.ok
+  }
+
+  private attachShelter(name: string, x: number, you: Ent): void {
+    if (this.world.bases.some((b) => b.owner === you.id && Math.abs(b.x - x) < 1.4 && b.name === name)) return
+    this.world.bases.push({
+      id: this.world.nextId++,
+      owner: you.id,
+      name,
+      tier: 1,
+      clan: you.clan,
+      x,
+      biome: you.region,
+      hp: 22,
+      maxHp: 22,
+      mats: {},
+      gems: {},
+      shield: 0,
+      warn: 0,
+      raidUntil: 0,
+      wave: 0,
+      nextAt: 1e9,
+      online: true,
+      defs: [],
+    })
   }
 
   private renderEvo(): void {
@@ -441,13 +937,49 @@ export class Game {
     const tier = tierOf(you.spent)
     const root = document.getElementById('evo-body')
     const ep = document.getElementById('evo-ep')
-    if (ep) ep.textContent = `EP ${Math.floor(you.ep)} · tier ${tier}`
+    if (ep) ep.textContent = `DNA ${Math.floor(you.ep)} · tier ${tier} · skin ${you.load.skin || 1}`
+    this.paintPreview()
     if (!root) return
+    const tabs = `<p class="tabs"><button data-kind="tab" data-id="parts">Parts</button><button data-kind="tab" data-id="skin">Skin</button></p>`
+    if (this.evoTab === 'skin') {
+      const cur = Math.max(1, you.load.skin || 1)
+      const now = SKINS[cur - 1]
+      const next = SKINS[cur]
+      const cost = next
+        ? `${next.dna} DNA${next.hides ? ` · ${next.hides} hides` : ''}${next.mat ? ` · ${next.matN} ${next.mat}` : ''}${next.gem ? ` · ${next.gemN} ${next.gem}` : ''}`
+        : 'complete'
+      root.innerHTML = [
+        tabs,
+        `<h3>Skin ${cur}/20 · ${now?.name ?? 'Bare skin'}</h3>`,
+        `<p>Resistance +${now?.def ?? 0} · HP +${now?.hp ?? 0}${now?.spd ? ` · speed ${now.spd}` : ''}</p>`,
+        `<p>Held: ${Math.floor(you.ep)} DNA · ${hideStock(you.bag)} hides</p>`,
+        next ? `<button data-kind="skin" data-id="next">Grow ${next.name} · ${cost}</button>` : '<p>Legendary inlay is complete.</p>',
+      ].join('')
+      root.querySelectorAll('button').forEach((btn) =>
+        btn.addEventListener('click', () => {
+          const kind = (btn as HTMLButtonElement).dataset.kind ?? ''
+          if (kind === 'tab') {
+            this.evoTab = ((btn as HTMLButtonElement).dataset.id as 'parts' | 'skin') ?? 'parts'
+            this.renderEvo()
+            return
+          }
+          const result = tryPurchase(you, 'skin', 'next')
+          this.world.banner = result.reason
+          this.world.bannerT = 2
+          if (result.ok) this.feel('evolve')
+          else audio.blip('hurt')
+          this.keysigs.delete(you.id)
+          this.renderEvo()
+          this.save()
+        }),
+      )
+      return
+    }
     const row = (kind: string, id: string, name: string, need: number, cost: number, on: boolean) => {
       const locked = tier < need
       return `<button data-kind="${kind}" data-id="${id}" ${locked ? 'disabled' : ''}>${locked ? '🔒 ' : ''}${name}${on ? ' · on' : ''}${locked ? ` · Unlocks at tier ${need}` : cost ? ` · ${cost} EP` : ''}</button>`
     }
-    const blocks: string[] = []
+    const blocks: string[] = [tabs]
     blocks.push('<h3>Jaws</h3>')
     for (const j of JAWS) blocks.push(row('jaw', j.id, j.name, j.tier, j.cost, you.load.jaw === j.id))
     blocks.push('<h3>Teeth</h3>')
@@ -482,6 +1014,11 @@ export class Game {
       btn.addEventListener('click', () => {
         const kind = (btn as HTMLButtonElement).dataset.kind ?? ''
         const id = (btn as HTMLButtonElement).dataset.id ?? ''
+        if (kind === 'tab') {
+          this.evoTab = (id as 'parts' | 'skin') || 'parts'
+          this.renderEvo()
+          return
+        }
         const result = tryPurchase(you, kind, id)
         this.world.banner = result.reason
         this.world.bannerT = 2
@@ -495,21 +1032,24 @@ export class Game {
   }
 
   private renderBuild(): void {
-    const root = document.getElementById('build-body')
-    if (!root) return
+    const root = document.getElementById('build-picks')
+    const status = document.getElementById('build-status')
     const you = playerOf(this.world)
-    const bits = [
-      ...BUILDINGS.map((b) => `<button data-build="${b.id}">${b.name} · tier ${b.tier}</button>`),
-      ...DEFENSES.map((d) => `<button data-def="${d.id}">${d.name} · tier ${d.tier} · cap ${defenseCap(tierOf(you.spent))}</button>`),
-    ]
-    root.innerHTML = bits.join('')
+    if (!root) return
+    root.innerHTML = PIECES.map((b, i) => {
+      const have = costLine(b.cost)
+     const on = i === this.buildIndex ? ' on' : ''
+      return `<button data-i="${i}" class="${on.trim()}">${b.name} · ${have}</button>`
+    }).join('')
+    const def = PIECES[this.buildIndex]
+    if (status && def) {
+      const bag = Object.entries(def.cost).map(([m, n]) => `${you.bag[m] ?? 0}/${n} ${m}`).join(' · ')
+      status.textContent = this.buildFree ? `${def.name} · free to place after pickup` : `${def.name} · ${bag}`
+    }
     root.querySelectorAll('button').forEach((btn) =>
       btn.addEventListener('click', () => {
-        const el = btn as HTMLButtonElement
-        const result = el.dataset.build ? buildAt(this.world, el.dataset.build) : placeDefense(this.world, el.dataset.def ?? '')
-        this.world.banner = result.reason
-        this.world.bannerT = 2
-        audio.blip(result.ok ? 'dig' : 'hurt')
+        this.buildIndex = Number((btn as HTMLButtonElement).dataset.i ?? 0)
+        this.renderBuild()
       }),
     )
   }
@@ -519,12 +1059,15 @@ export class Game {
     if (kind === 'hit' || kind === 'bite') {
       this.kickCam(0.1)
       navigator.vibrate?.(25)
-    } else if (kind === 'eat' || kind === 'gem' || kind === 'chop' || kind === 'dig' || kind === 'mine') {
+    } else if (kind === 'eat' || kind === 'gem' || kind === 'chop' || kind === 'dig' || kind === 'mine' || kind === 'gather') {
       this.kickCam(0.08, 0.7, 0.5)
       navigator.vibrate?.(30)
     } else if (kind === 'evolve') {
       this.kickCam(0.16, 0.45, 0.85)
       navigator.vibrate?.(45)
+      const you = playerOf(this.world)
+      this.burst(you.x, you.y + 0.3, 0xc4f0d8, 'Evolved')
+      this.world.hitStop = Math.max(this.world.hitStop, 0.09)
     } else if (kind === 'hurt' || kind === 'trap' || kind === 'geyser') {
       this.kickCam(0.2)
       navigator.vibrate?.(80)
@@ -543,6 +1086,149 @@ export class Game {
     this.punch.ay = ay
   }
 
+  private placeCamera(you: Ent, _dt: number): void {
+    const aheadX = Math.cos(this.yaw)
+    const aheadZ = Math.sin(this.yaw)
+    const lock = this.world.ents.find((e) => e.id === this.lockId && e.alive)
+    const lookX = you.x + you.vx * 0.12
+    const lookZ = you.z + you.vz * 0.12
+    if (this.firstPerson) {
+      const fx = Math.cos(you.yaw)
+      const fz = Math.sin(you.yaw)
+      this.camGoal.set(you.x - fx * 0.15, you.y + 0.32, you.z - fz * 0.15)
+      this.lookGoal.set(you.x + fx * 1.4, you.y + 0.04 + Math.sin(this.pitch) * 1.2, you.z + fz * 1.4)
+      this.camera.near = 0.04
+      return
+    }
+    this.camera.near = 0.1
+    const tight = you.biteT > 0 || this.dashT > 0
+    const dist = this.camDist * this.zoom * (tight ? 0.62 : 1)
+    const height = tight ? 1.15 : 1.7
+    this.camGoal.set(you.x - aheadX * dist, you.y + height, you.z - aheadZ * dist)
+    if (lock) this.lookGoal.set(lock.x, lock.y + 0.4, lock.z)
+    else this.lookGoal.set(lookX + aheadX * 6, you.y + 0.5 + Math.sin(this.pitch) * 3.2, lookZ + aheadZ * 6)
+    this.probeCamera(you)
+  }
+
+  private probeCamera(you: Ent): void {
+    const fromX = you.x
+    const fromY = you.y + 0.55
+    const fromZ = you.z
+    const to = this.camGoal
+    const steps = 10
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps
+      const x = fromX + (to.x - fromX) * t
+      const y = fromY + (to.y - fromY) * t
+      const z = fromZ + (to.z - fromZ) * t
+      const floor = groundAt(x, z, y) + 0.5
+      if (y < floor) {
+        const back = (i - 1) / steps
+        to.set(fromX + (to.x - fromX) * back, Math.max(fromY + (to.y - fromY) * back, floor), fromZ + (to.z - fromZ) * back)
+        break
+      }
+    }
+  }
+
+  private stepBubbles(dt: number, sea: boolean): void {
+    const mesh = this.bubbles
+    if (!mesh) return
+    mesh.visible = sea
+    if (!sea) return
+    const dummy = new THREE.Object3D()
+    for (let i = 0; i < this.bubbleBases.length; i++) {
+      const b = this.bubbleBases[i]!
+      b.y += dt * 0.7
+      if (b.y > 5.4) b.y = 0.4
+      dummy.position.set(b.x + Math.sin(this.time + b.y) * 0.15, b.y, b.z)
+      dummy.scale.setScalar(b.s)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(i, dummy.matrix)
+    }
+    mesh.instanceMatrix.needsUpdate = true
+  }
+
+  private syncNodes(): void {
+    const needed = this.world.nodes.length
+    while (this.nodeGroup.children.length < needed) {
+      const m = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(0.28, 0),
+        new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.86, metalness: 0.04 }),
+      )
+      m.castShadow = true
+      this.nodeGroup.add(m)
+    }
+    this.nodeGroup.children.forEach((obj, i) => {
+      const node = this.world.nodes[i]
+      const mesh = obj as THREE.Mesh
+      if (!node || node.amount <= 0) {
+        mesh.visible = false
+        return
+      }
+      mesh.visible = true
+      const z = ((node.id % 5) - 2) * 1.6
+      const y = groundAt(node.x, z, 8)
+      mesh.position.set(node.x, y + 0.25, z)
+      const tint = TREE_TINT[node.mat] ?? ROCK_TINT[node.mat] ?? (node.kind === 'mat' ? 0x6a8a58 : 0x8a8070)
+      const mat = mesh.material as THREE.MeshStandardMaterial
+      mat.color.setHex(tint)
+      const tree = treeById(node.mat)
+      mesh.scale.setScalar(node.kind === 'tree' ? (tree?.cls === 'hard' ? 1.15 : 0.9) : node.kind === 'rock' ? 0.85 : 0.55)
+    })
+  }
+
+
+  private syncPieces(): void {
+    const needed = this.world.pieces.length
+    while (this.pieceGroup.children.length < needed) {
+      const m = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 1, 1),
+        new THREE.MeshStandardMaterial({ color: 0xb89a6a, roughness: 0.84, metalness: 0.04 }),
+      )
+      m.castShadow = true
+      m.receiveShadow = true
+      this.pieceGroup.add(m)
+    }
+    const tint: Record<string, number> = { lean: 0x8a9a58, floor: 0x7a6a48, wall: 0x9a8a68, roof: 0x6a5840, door: 0x5a4834, den: 0x6a5a44 }
+    this.pieceGroup.children.forEach((obj, i) => {
+      const piece = this.world.pieces[i]
+      const mesh = obj as THREE.Mesh
+      if (!piece) {
+        mesh.visible = false
+        return
+      }
+      const def = pieceById(piece.kind)
+      mesh.visible = true
+      mesh.position.set(piece.x, piece.y, piece.z)
+      mesh.rotation.set(0, -piece.yaw, 0)
+      mesh.scale.set(def?.sx ?? 1, def?.sy ?? 1, def?.sz ?? 1)
+      const mat = mesh.material as THREE.MeshStandardMaterial
+      mat.color.setHex(tint[piece.kind] ?? 0xb89a6a)
+    })
+  }
+
+  private updateGhost(): void {
+    const you = playerOf(this.world)
+    if (!this.buildMode) {
+      this.ghost.visible = false
+      return
+    }
+    const def = PIECES[this.buildIndex]
+    if (!def) {
+      this.ghost.visible = false
+      return
+    }
+    const aim = this.aimPoint(you)
+    const check = canPlace(this.world, you, def.id, aim.x, aim.y, aim.z, you.yaw + this.buildYaw, this.buildFree)
+    this.ghost.visible = true
+    this.ghost.position.set(check.pose.x, check.pose.y, check.pose.z)
+    this.ghost.rotation.set(0, -check.pose.yaw, 0)
+    this.ghost.scale.set(def.sx, def.sy, def.sz)
+    const mat = this.ghost.material as THREE.MeshStandardMaterial
+    mat.color.setHex(check.ok ? 0x6ec070 : 0xc05040)
+    mat.opacity = 0.48
+  }
+
   private applyCamFeel(dt: number): void {
     if (this.punch.t < this.punch.dur) {
       const u = Math.min(1, this.punch.t / this.punch.dur)
@@ -558,70 +1244,356 @@ export class Game {
     }
   }
 
+  private applyTouchVisibility(): void {
+    const show = this.playing && this.phoneLayout() && (!this.padOn || this.touchForced)
+    const touch = document.getElementById('touch')
+    const look = document.getElementById('look')
+    if (touch) touch.hidden = !show
+    if (look) look.hidden = !show
+  }
+
+  private revealTouch(): void {
+    if (!this.padOn) return
+    this.touchForced = true
+    this.applyTouchVisibility()
+  }
+
+  private menuTargets(): HTMLElement[] {
+    const pick = (ids: string[]) => ids.map((id) => document.getElementById(id)).filter((el): el is HTMLElement => !!el && !el.hidden)
+    if (this.quitOpen) return pick(['quit-save', 'quit-quit', 'quit-cancel'])
+    if (this.pauseOpen) return pick(['pause-resume', 'pause-save', 'pause-load', 'settings-close', 'set-sens', 'set-invert', 'set-vol', 'set-mute', 'set-quality', 'set-restart'])
+    if (this.evoOpen) return pick(['evo-close'])
+    if (this.selectOpen) return pick(['select-pause', 'select-evolve', 'select-quit'])
+    if (this.mapOpen) return pick(['map-close'])
+    if (!this.playing) return pick(['solo'])
+    const over = document.getElementById('overlay')
+    if (over && !over.hidden) return pick(['resume'])
+    return []
+  }
+
+  private markFocus(): void {
+    document.querySelectorAll('.pad-focus').forEach((el) => el.classList.remove('pad-focus'))
+    const items = this.menuTargets()
+    if (!items.length) return
+    this.focusIndex = Math.max(0, Math.min(items.length - 1, this.focusIndex))
+    items[this.focusIndex]?.classList.add('pad-focus')
+  }
+
+  private moveFocus(dir: number): void {
+    const items = this.menuTargets()
+    if (!items.length) return
+    this.focusIndex = (this.focusIndex + dir + items.length) % items.length
+    this.markFocus()
+  }
+
+  private activateFocus(nudge: number): void {
+    const el = this.menuTargets()[this.focusIndex]
+    if (!el) return
+    if (el instanceof HTMLInputElement && el.type === 'range') {
+      const step = Number(el.step) || 0.1
+      el.value = String(Math.min(Number(el.max), Math.max(Number(el.min), Number(el.value) + nudge * step)))
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+      return
+    }
+    if (el instanceof HTMLSelectElement && nudge) {
+      el.selectedIndex = Math.max(0, Math.min(el.options.length - 1, el.selectedIndex + nudge))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+      return
+    }
+    if (nudge) return
+    el.click()
+  }
+
+  private pollPad(dt: number): void {
+    const pads = navigator.getGamepads?.()
+    const pad = pads ? Array.from(pads).find((p) => p && p.connected) ?? null : null
+    const connected = !!pad
+    const map = document.getElementById('pad-map')
+    if (connected && !this.padOn) {
+      this.padOn = true
+      this.touchForced = false
+      this.padPromptT = 2.2
+      const prompt = document.getElementById('pad-prompt')
+      if (prompt) prompt.hidden = false
+      this.applyTouchVisibility()
+    }
+    if (!connected && this.padOn) {
+      this.padOn = false
+      this.touchForced = false
+      this.applyTouchVisibility()
+    }
+    if (map) map.hidden = !this.padOn || !this.playing || this.selectOpen || this.pauseOpen || this.quitOpen || this.evoOpen || this.mapOpen
+    this.gp = { lx: 0, ly: 0, rx: 0, ry: 0, attack: false, horn: false, dash: false, dig: false, rise: false, dive: false, sprint: false, use: false }
+    if (!pad) return
+    const pressed = (i: number) => !!pad.buttons[i]?.pressed || (pad.buttons[i]?.value ?? 0) > 0.45
+    const edge = (i: number) => {
+      const now = pressed(i)
+      const was = this.padPrev[i] ?? false
+      this.padPrev[i] = now
+      return now && !was
+    }
+    const lx = pad.axes[0] ?? 0
+    const ly = pad.axes[1] ?? 0
+    const rx = pad.axes[2] ?? 0
+    const ry = pad.axes[3] ?? 0
+    const using = pad.buttons.some((b) => b.pressed || b.value > 0.2) || Math.hypot(lx, ly, rx, ry) > 0.28
+    if (using && this.touchForced) {
+      this.touchForced = false
+      this.applyTouchVisibility()
+    }
+    if (edge(9)) {
+      if (!this.closeTopMenu()) this.toggleSelect(true)
+    }
+    if (edge(8) && !this.selectOpen && !this.pauseOpen && !this.quitOpen) this.toggleMap()
+    const menu = this.menuTargets()
+    if (this.mapOpen && !this.selectOpen && !this.pauseOpen && !this.quitOpen) {
+      this.mapOffX += lx * dt * 36
+      this.mapOffZ += ly * dt * 36
+      if (edge(1)) this.toggleMap(false)
+      return
+    }
+    if (menu.length) {
+      const up = edge(12) || (ly < -0.65 && !this.navLatch)
+      const down = edge(13) || (ly > 0.65 && !this.navLatch)
+      this.navLatch = Math.abs(ly) > 0.65
+      if (up) this.moveFocus(-1)
+      if (down) this.moveFocus(1)
+      this.sliderWait -= dt
+      if (this.sliderWait <= 0 && (Math.abs(lx) > 0.55 || pressed(14) || pressed(15))) {
+        this.activateFocus(lx < 0 || pressed(14) ? -1 : 1)
+        this.sliderWait = 0.16
+      }
+      if (edge(0)) this.activateFocus(0)
+      if (edge(1)) this.closeTopMenu()
+      return
+    }
+    if (Math.abs(rx) > 0.18) this.yawT -= rx * dt * 1.15 * this.lookSens
+    if (Math.abs(ry) > 0.18) {
+      const pitchDelta = (this.invertY ? ry : -ry) * dt * 0.7 * this.lookSens
+      this.pitchT = Math.max(-1.15, Math.min(1.15, this.pitchT + pitchDelta))
+    }
+    if (this.buildMode) {
+      if (edge(4) || edge(14)) this.cyclePiece(-1)
+      if (edge(5) || edge(15)) this.cyclePiece(1)
+      if (edge(12) || edge(13)) this.buildYaw += edge(12) ? Math.PI / 2 : -Math.PI / 2
+      if (edge(0) || edge(7)) this.confirmPlace()
+      if (edge(2)) this.pickupPiece()
+      if (edge(1)) this.toggleBuild(false)
+      if (edge(3)) this.toggleBuild(false)
+      this.gp = { lx, ly, rx, ry, attack: false, horn: false, dash: false, dig: false, rise: false, dive: false, sprint: pressed(10), use: false }
+      return
+    }
+    if (edge(3)) this.toggleBuild(true)
+    if (edge(11)) this.toggleLock()
+    if (edge(1) && this.cd.dash <= 0) {
+      this.cd.dash = 1.05
+      this.dashT = 0.2
+    }
+    if (pressed(6) && this.cd.horn <= 0) {
+      this.cd.horn = 1.7
+      this.hornT = 0.18
+    }
+    this.gp = {
+      lx, ly, rx, ry,
+      attack: pressed(7),
+      horn: pressed(6),
+      dash: false,
+      dig: pressed(2),
+      rise: pressed(4) || pressed(12) || pressed(0),
+      dive: pressed(5) || pressed(13),
+      sprint: pressed(10),
+      use: pressed(2),
+    }
+  }
+
+  private drawMap(): void {
+    const canvas = document.getElementById('map-canvas') as HTMLCanvasElement | null
+    const ctx = canvas?.getContext('2d')
+    if (!canvas || !ctx) return
+    const you = playerOf(this.world)
+    const w = canvas.width
+    const h = canvas.height
+    const cx = you.x + this.mapOffX
+    const cz = you.z + this.mapOffZ
+    const spanX = 160
+    const spanZ = 96
+    const toX = (x: number) => ((x - (cx - spanX / 2)) / spanX) * w
+    const toY = (z: number) => ((z - (cz - spanZ / 2)) / spanZ) * h
+    ctx.fillStyle = '#143840'
+    ctx.fillRect(0, 0, w, h)
+    ctx.fillStyle = '#6d7358'
+    ctx.fillRect(toX(66), 0, w, h)
+    ctx.fillStyle = '#d7cbb8'
+    ctx.fillRect(toX(60), 0, Math.max(6, toX(72) - toX(60)), h)
+    ctx.fillStyle = '#1d5560'
+    for (const key of this.explored) {
+      const [ix, iz] = key.split('|').map(Number)
+      ctx.fillRect(toX(ix * 12), toY(iz * 12), Math.max(4, toX(12) - toX(0)), Math.max(4, toY(12) - toY(0)))
+    }
+    ctx.fillStyle = '#e7e0d4'
+    ctx.beginPath()
+    ctx.arc(toX(you.x), toY(you.z), 6, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = '#d4c4a4'
+    ctx.font = '16px sans-serif'
+    ctx.fillText('First shore', toX(76), Math.max(18, toY(-8)))
+  }
+
   private gather(dt: number): Frame {
     const k = this.keys
     const left = k.has('a') || k.has('arrowleft')
     const right = k.has('d') || k.has('arrowright')
-    const up = k.has('w') || k.has('arrowup') || k.has(' ')
-    const down = k.has('s') || k.has('arrowdown')
-    const pads = navigator.getGamepads?.()
-    let ax = (right ? 1 : 0) - (left ? 1 : 0) + this.stick.x
-    let ay = (up ? 1 : 0) - (down ? 1 : 0) + this.stick.y
-    let jump = up || this.stick.y > 0.45
-    let bite = k.has('j') || this.mouseBite
+    const forwardKey = k.has('w') || k.has('arrowup')
+    const backKey = k.has('s') || k.has('arrowdown')
+    let camForward = (forwardKey ? 1 : 0) - (backKey ? 1 : 0) + this.stick.y - (Math.abs(this.gp.ly) > 0.2 ? this.gp.ly : 0)
+    let camStrafe = (right ? 1 : 0) - (left ? 1 : 0) + this.stick.x + (Math.abs(this.gp.lx) > 0.2 ? this.gp.lx : 0)
+    let jump = k.has(' ') || this.riseHeld || this.gp.rise
+    const dive = k.has('c') || k.has('control') || this.diveHeld || this.gp.dive
+    const sprint = k.has('shift') || this.gp.sprint
+    let bite = !this.buildMode && (k.has('j') || this.mouseBite || this.gp.attack)
     let dig = false
     let use = false
-    const pad = pads?.[0]
-    if (pad) {
-      const lx = pad.axes[0] ?? 0
-      const ly = pad.axes[1] ?? 0
-      if (Math.abs(lx) > 0.2) ax += lx
-      if (Math.abs(ly) > 0.2) ay -= ly
-      if (pad.buttons[0]?.pressed) jump = true
-      if (pad.buttons[2]?.pressed) bite = true
-    }
     const you = playerOf(this.world)
+    const orbit = this.yaw
+    const lock = this.world.ents.find((e) => e.id === this.lockId && e.alive)
+    if (!lock) this.lockId = 0
     if (this.dashT > 0) {
-      ax = you.facing
+      if (Math.hypot(camForward, camStrafe) < 0.2) camForward = 1
       this.dashT -= dt
     }
     if (this.hornT > 0) {
-      ax = you.facing
+      camForward = 1
       bite = true
       this.hornT -= dt
     }
-    if (this.actHeld) {
-      const near = this.world.nodes.some((n) => n.amount > 0 && Math.abs(n.x - you.x) < 2.2)
-      if (near) use = true
-      else dig = true
+    if ((this.actHeld || this.gp.dig || k.has('f')) && !this.buildMode) {
+      if (this.pickupPiece()) {
+        use = false
+        dig = false
+      } else {
+        const near = this.world.nodes.some((n) => n.amount > 0 && Math.abs(n.x - you.x) < 2.2)
+        if (near) use = true
+        else dig = true
+      }
     }
-    ax = Math.max(-1, Math.min(1, ax))
-    ay = Math.max(-1, Math.min(1, ay))
-    const ease = 1 - Math.exp(-dt * 9)
+    if (this.buildMode && (this.actHeld || k.has('f'))) this.pickupPiece()
+    if (!backKey && camForward > -0.2 && !this.buildMode) camForward = Math.min(1, camForward + 0.62)
+    // Camera-relative move; when locked, face the prey and strafe around it.
+    let moveF = camForward
+    let moveS = camStrafe
+    if (lock) {
+      const want = Math.atan2(lock.z - you.z, lock.x - you.x)
+      let turn = want - you.yaw
+      while (turn > Math.PI) turn -= Math.PI * 2
+      while (turn < -Math.PI) turn += Math.PI * 2
+      you.yaw += turn * Math.min(1, dt * 8)
+      this.yawT += ((want - this.yaw + Math.PI * 3) % (Math.PI * 2) - Math.PI) * 0.08
+    } else if (Math.hypot(camForward, camStrafe) > 0.15) {
+      const wish = Math.atan2(
+        Math.sin(orbit) * camForward + Math.cos(orbit) * camStrafe,
+        Math.cos(orbit) * camForward - Math.sin(orbit) * camStrafe,
+      )
+      let turn = wish - you.yaw
+      while (turn > Math.PI) turn -= Math.PI * 2
+      while (turn < -Math.PI) turn += Math.PI * 2
+      you.yaw += turn * Math.min(1, dt * 8)
+      moveF = Math.min(1, Math.hypot(camForward, camStrafe))
+      moveS = 0
+    }
+    if (bite || this.lockId) {
+      const aim = lock ?? nearestInCone(this.world, you)
+      if (aim) {
+        const adx = aim.x - you.x
+        const adz = aim.z - you.z
+        const want = Math.atan2(adz, adx)
+        let turn = want - you.yaw
+        while (turn > Math.PI) turn -= Math.PI * 2
+        while (turn < -Math.PI) turn += Math.PI * 2
+        you.yaw += turn * (bite ? 0.85 : 0.2)
+        const dist = Math.hypot(adx, adz) || 1
+        const wantP = Math.atan2(aim.y - you.y, dist) * 0.85
+        this.pitch += (wantP - this.pitch) * (bite ? 0.55 : 0.12)
+        this.pitchT = this.pitch
+      }
+    }
+    you.pitch = this.pitch
+    const fwd = Math.max(-1, Math.min(1, moveF))
+    const ax = Math.max(-1, Math.min(1, moveS))
+    const lookClimb = Math.max(-1, Math.min(1, Math.sin(this.pitch) * 1.25))
+    const ay = dive ? -1 : jump ? 1 : lookClimb
+    const ease = 1 - Math.exp(-dt * 12)
     this.sAx += (ax - this.sAx) * ease
-    this.sAy += (ay - this.sAy) * ease
+    this.sAy += (fwd - this.sAy) * ease
     if (this.mouseUp) {
       this.mouseBite = false
       this.mouseUp = false
     }
-    return { ax: this.sAx, ay: this.sAy, jump, bite, dig: k.has('f') || dig, use: k.has('g') || use, ink: k.has('q') }
+    return {
+      ax: this.sAx,
+      ay,
+      jump: jump || lookClimb > 0.2,
+      bite,
+      dig: k.has('f') || dig,
+      use: k.has('g') || use,
+      ink: false,
+      dash: this.dashT > 0.12 || this.gp.dash,
+      horn: this.hornT > 0.1 || this.gp.horn,
+      forward: this.sAy,
+      dive: dive || lookClimb < -0.2,
+      sprint,
+    }
   }
 
   private frame(): void {
     requestAnimationFrame(() => this.frame())
     const dt = Math.min(0.033, this.clock.getDelta())
     this.time += dt
+    this.saveAcc += dt
+    if (this.playing && this.saveAcc >= 8) {
+      this.saveAcc = 0
+      this.save()
+    }
     this.waterU.value = this.time
-    if (this.playing && !this.paused && !this.evoOpen && !this.buildOpen && !this.world.over) {
+    this.easeLook(dt)
+    this.pollPad(dt)
+    if (this.playing) {
+      const you = playerOf(this.world)
+      this.explored.add(`${Math.floor(you.x / 12)}|${Math.floor(you.z / 12)}`)
+    }
+    if (this.mapOpen) this.drawMap()
+    if (this.padPromptT > 0) {
+      this.padPromptT -= dt
+      if (this.padPromptT <= 0) document.getElementById('pad-prompt')?.setAttribute('hidden', '')
+    }
+    if (this.toastT > 0) {
+      this.toastT -= dt
+      if (this.toastT <= 0) document.getElementById('save-toast')?.setAttribute('hidden', '')
+    }
+    if (this.world.hitStop > 0) this.world.hitStop = Math.max(0, this.world.hitStop - dt)
+    else if (this.playing && !this.paused && !this.evoOpen && !this.selectOpen && !this.pauseOpen && !this.quitOpen && !this.mapOpen && !this.world.over) {
       const ev = step(this.world, dt, this.gather(dt))
-      for (const e of ev) if (e.t !== 'note') this.feel(e.t)
+      for (const e of ev) {
+        if (e.t !== 'note') this.feel(e.t === 'eat' ? 'eat' : e.t)
+        if (e.t === 'hit' || e.t === 'hurt') {
+          this.burst(e.x, e.y, e.t === 'hit' ? 0xffe6a0 : 0xc4b59a, e.text)
+          if (e.t === 'hit') this.flashHit(e.x, e.y)
+        }
+        if (e.t === 'eat') {
+          this.burst(e.x, e.y, 0xf0e0a8, e.text)
+          this.world.hitStop = Math.max(this.world.hitStop, 0.055)
+        }
+        if (e.t === 'gate') this.burst(e.x, e.y, 0xd4c4a4, e.text)
+        if (e.t === 'warn') this.flashHit(e.x, e.y)
+      }
     }
     this.sync()
     const you = playerOf(this.world)
     const sea = you.region === 'sea'
-    const camY = sea ? you.y + 0.2 : you.y + 0.45
-    this.camGoal.set(you.x - you.facing * 0.2, camY, this.camDist)
-    this.lookGoal.set(you.x + you.facing * 1.5, you.y, 0)
+    this.placeCamera(you, dt)
+    this.chunks?.update(you.x, you.z)
+    this.chunks?.tick(this.time)
+    const groundMat = this.chunks?.material as THREE.ShaderMaterial | undefined
+    if (groundMat?.uniforms?.uTime) groundMat.uniforms.uTime.value = this.time
     this.cd.dash = Math.max(0, this.cd.dash - dt)
     this.cd.horn = Math.max(0, this.cd.horn - dt)
     this.cd.act = Math.max(0, this.cd.act - dt)
@@ -636,27 +1608,36 @@ export class Game {
     const actBtn = document.getElementById('t-act')
     if (actLbl) actLbl.textContent = near ? 'Get' : 'Dig'
     actBtn?.setAttribute('aria-label', near ? 'Gather' : 'Dig')
-    const ck = 1 - Math.exp(-dt * 2.6)
+    const tight = you.biteT > 0 || this.dashT > 0
+    const ck = 1 - Math.exp(-dt * (tight ? 10 : 5.5))
     this.camPos.lerp(this.camGoal, ck)
-    this.lookPos.lerp(this.lookGoal, 1 - Math.exp(-dt * 3.2))
+    this.lookPos.lerp(this.lookGoal, 1 - Math.exp(-dt * (tight ? 8 : 5)))
     this.camera.position.copy(this.camPos)
     this.applyCamFeel(dt)
     this.camera.lookAt(this.lookPos)
+    this.camera.updateProjectionMatrix()
     this.sun.position.set(you.x - 10, 18, 12)
     this.sun.target.position.set(you.x, 1, 0)
     const fog = this.scene.fog as THREE.Fog
-    const fogColor = sea ? new THREE.Color(0x1e4a52) : you.region === 'volcano' ? new THREE.Color(0x8a6a58) : new THREE.Color(0xa9b8ae)
-    fog.color.lerp(fogColor, 0.04)
-    for (const b of this.bubbles) {
-      if (!sea) {
-        b.visible = false
-        continue
-      }
-      b.visible = true
-      b.position.y += dt * 0.7
-      b.position.x = (b.userData.baseX as number) + Math.sin(this.time + b.position.y) * 0.15
-      if (b.position.y > 5.4) b.position.y = 0.4
-    }
+    const under = this.camera.position.y < WATER && this.camera.position.x < 78
+    const zone = you.region
+    const fogColor = under
+      ? new THREE.Color(0x0a5460)
+      : zone === 'volcano'
+        ? new THREE.Color(0x8a4030)
+        : zone === 'sea'
+          ? new THREE.Color(0x6aa8b0)
+          : new THREE.Color(0xd2c4a4)
+    fog.color.lerp(fogColor, 0.2)
+    fog.near = under ? 2 : zone === 'volcano' ? 10 : zone === 'sea' ? 16 : 20
+    fog.far = under ? 26 : zone === 'volcano' ? 70 : zone === 'sea' ? 90 : 120
+    this.renderer.setClearColor(under ? 0x083e48 : zone === 'volcano' ? 0x6a382c : zone === 'sea' ? 0x7eb4b8 : 0xd2c4a4)
+    this.renderer.toneMappingExposure = zone === 'volcano' ? 1.06 : zone === 'sea' ? 1.16 : 1.2
+    this.adaptResolution(dt)
+    this.stepBubbles(dt, sea)
+    this.syncNodes()
+    this.syncPieces()
+    this.updateGhost()
     if (this.hintLeft > 0) {
       this.hintLeft -= dt
       if (this.hintLeft <= 0) {
@@ -664,8 +1645,152 @@ export class Game {
         if (hint) hint.hidden = true
       }
     }
+    this.paintDebris()
+    this.paintDebug()
+    this.stepBursts(dt)
+    this.stepFlash(dt)
     this.hud()
+    if (this.evoOpen) this.paintPreview()
     this.renderer.render(this.scene, this.camera)
+  }
+
+  private flashHit(x: number, y: number): void {
+    for (const group of this.meshes.values()) {
+      if (Math.hypot(group.position.x - x, group.position.y - y) > 2.4) continue
+      group.traverse((obj) => {
+        const mesh = obj as THREE.Mesh
+        const mat = mesh.material as THREE.MeshStandardMaterial | undefined
+        if (!mat || !mat.emissive) return
+        mat.emissive.setHex(0xfff1c4)
+        mat.emissiveIntensity = 0.8
+        group.userData.flash = 0.22
+      })
+    }
+  }
+
+  private stepFlash(dt: number): void {
+    for (const group of this.meshes.values()) {
+      if (!(group.userData.flash > 0)) continue
+      group.userData.flash -= dt
+      const on = group.userData.flash > 0
+      group.traverse((obj) => {
+        const mat = (obj as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined
+        if (!mat || !mat.emissive) return
+        if (!on) {
+          mat.emissive.setHex(0x000000)
+          mat.emissiveIntensity = 0
+        }
+      })
+    }
+  }
+
+  private burst(x: number, y: number, color: number, text: string): void {
+    const you = playerOf(this.world)
+    for (let i = 0; i < 12; i++) {
+      let slot = this.bursts.find((b) => b.life <= 0)
+      if (!slot) {
+        const m = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 5), new THREE.MeshBasicMaterial({ color }))
+        this.scene.add(m)
+        slot = { m, v: new THREE.Vector3(), life: 0 }
+        this.bursts.push(slot)
+      }
+      ;(slot.m.material as THREE.MeshBasicMaterial).color.setHex(color)
+      slot.m.position.set(x, y + 0.2, you.z)
+      slot.m.visible = true
+      slot.v.set((Math.random() - 0.5) * 3.2, 0.6 + Math.random() * 2, (Math.random() - 0.5) * 2.2)
+      slot.life = 0.55
+    }
+    if (!text) return
+    const pop = document.createElement('span')
+    pop.className = 'pop'
+    pop.textContent = text
+    document.body.appendChild(pop)
+    const w = window.innerWidth
+    const h = window.innerHeight
+    pop.style.left = `${w * 0.5 + (x - playerOf(this.world).x) * 28}px`
+    pop.style.top = `${h * 0.42 - (y - playerOf(this.world).y) * 28}px`
+    window.setTimeout(() => pop.remove(), 700)
+  }
+
+  private stepBursts(dt: number): void {
+    for (const b of this.bursts) {
+      if (b.life <= 0) {
+        b.m.visible = false
+        continue
+      }
+      b.life -= dt
+      b.v.y -= 3 * dt
+      b.m.position.addScaledVector(b.v, dt)
+    }
+  }
+
+  private paintDebris(): void {
+    const list = this.world.debris
+    while (this.debrisMeshes.length < list.length) {
+      const m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.12, 0), new THREE.MeshStandardMaterial({ color: 0x6d6256, roughness: 0.92 }))
+      this.scene.add(m)
+      this.debrisMeshes.push(m)
+    }
+    this.debrisMeshes.forEach((m, i) => {
+      const d = list[i]
+      m.visible = !!d
+      if (d) m.position.set(d.x, d.y, 0)
+    })
+  }
+
+  private adaptResolution(_dt: number): void {
+    const now = performance.now()
+    const ms = now - this.lastNow
+    this.lastNow = now
+    if (this.qualityMode !== 'auto') {
+      this.resTick = 0
+      return
+    }
+    this.resTick += ms
+    if (this.resTick < 500) return
+    this.resTick = 0
+    const slow = ms > 42
+    if (slow && this.quality === 'high') this.quality = 'mid'
+    else if (slow && this.quality === 'mid') this.quality = 'low'
+    else if (ms < 20 && this.quality === 'low') this.quality = 'mid'
+    else return
+    this.applyQuality()
+  }
+
+  private paintDebug(): void {
+    this.debugLine.visible = false
+    const btn = document.getElementById('hit')
+    if (btn) btn.textContent = this.debug ? 'Hit on' : 'Hit'
+    if (!this.debug) {
+      for (const m of this.hitDebug) m.visible = false
+      return
+    }
+    const vols: HitVol[] = []
+    for (const e of this.world.ents) {
+      if (!e.alive || e.kind === 'meat') continue
+      vols.push(...attackVolumes(e.load, e.spent, e.kind === 'boss', e.species, e.x, e.y, e.z, e.yaw))
+    }
+    const colors = { jaw: 0xffe6a0, horn: 0xd4a0ff, claw: 0xa0e6ff }
+    while (this.hitDebug.length < vols.length) {
+      const m = new THREE.Mesh(
+        new THREE.SphereGeometry(1, 12, 8),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.8, depthTest: false }),
+      )
+      m.frustumCulled = false
+      this.scene.add(m)
+      this.hitDebug.push(m)
+    }
+    this.hitDebug.forEach((m, i) => {
+      const v = vols[i]
+      if (!v) {
+        m.visible = false
+        return
+      }
+      m.visible = true
+      m.position.set(v.x, v.y, v.z)
+      m.scale.setScalar(Math.max(0.06, v.r))
+      ;(m.material as THREE.MeshBasicMaterial).color.setHex(colors[v.kind])
+    })
   }
 
   private sync(): void {
@@ -676,19 +1801,39 @@ export class Game {
         continue
       }
       seen.add(e.id)
-      const sig = creatureKey(e.load, e.spent) + e.kind
+      const sig = creatureKey(e.load, e.spent, e.species) + e.kind
       let group = this.meshes.get(e.id)
       if (!group || this.keysigs.get(e.id) !== sig) {
         group?.removeFromParent()
-        group = buildCreature(e.load, e.spent, e.kind === 'boss' ? 'boss' : e.kind === 'player' ? 'player' : 'npc')
+        group = buildCreature(e.load, e.spent, e.kind === 'boss' ? 'boss' : e.kind === 'player' ? 'player' : 'npc', e.species)
         this.scene.add(group)
         this.meshes.set(e.id, group)
         this.keysigs.set(e.id, sig)
       }
       const y = e.kind === 'player' || e.region !== 'sea' ? Math.max(e.y, 1.05) : e.y
       group.userData.baseY = y
-      group.position.set(e.x, y, e.kind === 'npc' ? ((e.id % 5) - 2) * 0.35 : 0)
-      poseCreature(group, this.time + e.salt, Math.abs(e.vx) + Math.abs(e.vy) > 0.25, e.biteT, e.facing)
+      group.userData.yaw = e.yaw
+      group.position.set(e.x, y, e.z)
+      group.visible = true
+      poseCreature(group, this.time + e.salt, Math.abs(e.vx) + Math.abs(e.vy) > 0.25, e.biteT > 0 || e.tele > 0 ? 1 : 0, e.facing)
+      if (e.tele > 0) {
+        group.userData.teleGlow = true
+        const pulse = 0.4 + Math.sin(this.time * 14) * 0.3
+        group.traverse((obj) => {
+          const mat = (obj as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined
+          if (!mat || !mat.emissive) return
+          mat.emissive.setHex(0xff6a3a)
+          mat.emissiveIntensity = pulse
+        })
+      } else if (group.userData.teleGlow && !(group.userData.flash > 0)) {
+        group.userData.teleGlow = false
+        group.traverse((obj) => {
+          const mat = (obj as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined
+          if (!mat || !mat.emissive) return
+          mat.emissive.setHex(0x000000)
+          mat.emissiveIntensity = 0
+        })
+      }
       const hp = group.userData.hp as THREE.Object3D | undefined
       if (hp) hp.scale.x = Math.max(0.05, e.hp / e.maxHp)
     }
@@ -701,28 +1846,97 @@ export class Game {
     }
   }
 
+  private paintPreview(): void {
+    const canvas = document.getElementById('evo-preview') as HTMLCanvasElement | null
+    if (!canvas || !this.evoOpen) return
+    if (!this.preview) {
+      this.preview = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
+      this.preview.setSize(320, 180, false)
+      this.preview.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
+      this.preview.outputColorSpace = THREE.SRGBColorSpace
+      this.previewScene = new THREE.Scene()
+      this.previewScene.background = new THREE.Color(0x143840)
+      this.previewScene.add(new THREE.HemisphereLight(0xffe2c4, 0x1a4450, 1.1))
+      const sun = new THREE.DirectionalLight(0xfff1d0, 1.2)
+      sun.position.set(2, 3, 4)
+      this.previewScene.add(sun)
+    }
+    const you = playerOf(this.world)
+    const fish = buildCreature(you.load, you.spent, 'player', you.species)
+    fish.rotation.y = 0.55
+    const bar = fish.getObjectByName('hp')
+    if (bar) bar.visible = false
+    this.previewScene?.children.filter((c) => c.type === 'Group').forEach((c) => c.removeFromParent())
+    this.previewScene?.add(fish)
+    const cam = new THREE.PerspectiveCamera(32, 320 / 180, 0.05, 20)
+    cam.position.set(1.8, 0.42, 2.5)
+    cam.lookAt(0, 0, 0)
+    this.preview?.render(this.previewScene!, cam)
+  }
+
   private hud(): void {
     const you = playerOf(this.world)
     const set = (id: string, text: string) => {
       const el = document.getElementById(id)
       if (el) el.textContent = text
     }
+    const tier = tierOf(you.spent)
+    const goal = fishGoal(you.spent, you.ep)
+    const prev = TIER_SPENT[Math.min(tier, 3) - 1] ?? 0
+    const nextMark = tier >= 3 ? null : TIER_SPENT[tier]
+    const growth = nextMark == null ? 100 : Math.round(((you.spent - prev) / Math.max(1, nextMark - prev)) * 100)
     set('hp', `HP ${Math.ceil(you.hp)}/${you.maxHp}`)
-    set('ep', `EP ${Math.floor(you.ep)}`)
-    set('tier', `T${tierOf(you.spent)} ${you.region}`)
+    set('ep', goal.next ? `EP ${Math.floor(you.ep)}/${goal.cost}` : `EP ${Math.floor(you.ep)}`)
+    const stageName = goal.stage.charAt(0).toUpperCase() + goal.stage.slice(1)
+    set('tier', tier >= 3 ? 'Sturgeon · Tier 3/3' : `${stageName} · Tier ${tier}/3 · Growth ${growth}%`)
+    set('goal', earlyGoal(this.world, you, goal.line))
+    const grow = document.getElementById('grow') as HTMLButtonElement | null
+    if (grow) {
+      grow.hidden = !goal.next
+      if (goal.next) {
+        grow.disabled = you.ep < goal.cost
+        grow.textContent = you.ep < goal.cost ? `Need ${goal.cost} EP for a ${goal.next}` : `Grow a ${goal.next} · ${goal.cost} EP`
+      }
+    }
+    if (!this.shoreTold && tier >= 3 && you.x >= 66) {
+      this.shoreTold = true
+      this.world.banner = 'The first shore. Next: keep growing inland.'
+      this.world.bannerT = 8
+    }
+    const digBtn = document.getElementById('t-act') as HTMLButtonElement | null
+    const locked = tier < 3
+    if (digBtn) {
+      digBtn.disabled = locked
+      digBtn.title = locked ? 'Unlocks at Tier 3' : 'Dig'
+      if (locked) {
+        const lbl = document.getElementById('t-act-lbl')
+        if (lbl) lbl.textContent = 'Tier 3'
+        digBtn.setAttribute('aria-label', 'Unlocks at Tier 3')
+      }
+    }
     set('banner', this.world.bannerT > 0 ? this.world.banner : '')
-    const pause = document.getElementById('t-pause')
-    if (pause) pause.textContent = this.paused ? 'Play' : 'Pause'
+    const lockEl = document.getElementById('lock-tag')
+    const lockedPrey = this.world.ents.find((e) => e.id === this.lockId && e.alive)
+    if (lockEl) {
+      lockEl.hidden = !lockedPrey
+      lockEl.textContent = lockedPrey ? `Lock · ${lockedPrey.name}` : ''
+    }
     const over = document.getElementById('overlay')
-    if (over) over.hidden = !this.world.over && !this.world.won
-    if (this.world.won) set('overlay-text', 'The colossus stills. Eden is a body you grow toward.')
-    if (this.world.over) set('overlay-text', 'The body fails. Continue keeps your parts.')
+    const again = document.getElementById('resume')
+    if (over) over.hidden = !this.world.over
+    if (this.world.over) {
+      set('overlay-title', 'The body fails')
+      set('overlay-text', 'Your parts stay with you. Wake in the shallows and try again.')
+      if (again) again.textContent = 'Retry'
+    }
   }
 
   save(): void {
-    const you = playerOf(this.world)
     try {
-      localStorage.setItem(SAVE, JSON.stringify({ name: you.name, ep: you.ep, spent: you.spent, load: you.load, unlocked: you.unlocked, bag: you.bag, gems: you.gems, clan: you.clan }))
+      const data = encodeGameSave(this.world)
+      const raw = serializeGameSave(data)
+      this.lastSaved = raw
+      localStorage.setItem(SAVE, raw)
     } catch {
       /* ignore */
     }
@@ -732,16 +1946,15 @@ export class Game {
     try {
       const raw = localStorage.getItem(SAVE)
       if (!raw) return
-      const data = JSON.parse(raw) as Partial<Ent>
+      const data = parseGameSave(raw)
+      if (!data) return
+      applyGameSave(this.world, data)
+      this.lastSaved = serializeGameSave(encodeGameSave(this.world))
       const you = playerOf(this.world)
-      if (data.load) you.load = { ...you.load, ...data.load }
-      if (typeof data.ep === 'number') you.ep = data.ep
-      if (typeof data.spent === 'number') you.spent = data.spent
-      if (data.unlocked) you.unlocked = data.unlocked
-      if (data.bag) you.bag = data.bag
-      if (data.gems) you.gems = data.gems
-      if (data.name) you.name = data.name
-      if (typeof data.clan === 'string') you.clan = data.clan
+      this.yaw = you.yaw
+      this.yawT = you.yaw
+      this.pitch = you.pitch
+      this.pitchT = you.pitch
     } catch {
       /* ignore */
     }
@@ -764,11 +1977,38 @@ export function mount(): Game | null {
     start: () => game.start(),
     snapshot: () => {
       const you = playerOf(game.world)
-      return { x: you.x, y: you.y, hp: you.hp, ep: you.ep, spent: you.spent, tier: tierOf(you.spent), jaw: you.load.jaw, wings: you.load.wings, region: you.region, pvp: game.world.pvp, bases: game.world.bases.length, raiders: game.world.raiders.length }
+      return { x: you.x, y: you.y, hp: you.hp, ep: you.ep, spent: you.spent, eats: game.world.eats, tier: tierOf(you.spent), jaw: you.load.jaw, wings: you.load.wings, region: you.region, pvp: game.world.pvp, bases: game.world.bases.length, raiders: game.world.raiders.length, pieces: game.world.pieces.length, lockId: game['lockId'], buildMode: game['buildMode'], selectOpen: game.selectOpen, pauseOpen: game.pauseOpen, evoOpen: game.evoOpen, quitOpen: game.quitOpen, playing: game.playing }
     },
+    toggleBuild: (on?: boolean) => game.toggleBuild(on),
+    toggleLock: () => game.toggleLock(),
+    toggleSelect: (on?: boolean) => game.toggleSelect(on),
+    togglePause: (on?: boolean) => game.togglePause(on),
+    toggleQuit: (on?: boolean) => game.toggleQuit(on),
+    resume: () => game['resumePlay'](),
+    save: () => game.manualSave(),
+    load: () => game.manualLoad(),
+    quit: (saveFirst?: boolean) => game.quitToTitle(!!saveFirst),
+    place: () => game['confirmPlace'](),
+    pickup: () => game['pickupPiece'](),
+    cycle: (dir: number) => game['cyclePiece'](dir),
   }
   ;(window as unknown as { evo: typeof api }).evo = api
   return game
+}
+
+function earlyGoal(w: World, you: Ent, fallback: string): string {
+  if (w.eats < 5) return `Eat 5 fish (${w.eats}/5)`
+  if (you.load.lungs < 1) {
+    if (you.spent < 12) return 'Grow lungs — first grow a steelhead, then Evolve (E)'
+    return you.ep >= 6 ? 'Grow lungs — open Evolve (E)' : 'Grow lungs — earn 6 EP, then Evolve (E)'
+  }
+  const mine = w.bases.some((b) => b.owner === you.id) || w.pieces.some((p) => p.owner === you.id && (p.kind === 'lean' || p.kind === 'den'))
+  if (!mine) return 'Dig a den — gather 2 kelp, then Build (B) and place a lean-to'
+  if (you.x < 66) return 'Reach the first shore'
+  const boss = w.ents.find((e) => e.kind === 'boss')
+  if (boss?.alive) return 'The Strand Colossus bars the inland. Defeat it to pass.'
+  if (w.gateOpen && you.x < 168) return 'The inland is open. Keep growing.'
+  return fallback
 }
 
 function ring(id: string, left: number, max: number): void {
@@ -795,102 +2035,3 @@ function skyTexture(): THREE.CanvasTexture {
   return tex
 }
 
-function ribbon(x0: number, x1: number, segs: number, yAt: (x: number) => number, colorAt: (x: number, y: number) => number): THREE.Mesh {
-  const zs = [-3.6, -1.2, 1.2, 3.6]
-  const cols = zs.length
-  const rows = segs + 1
-  const pos = new Float32Array(rows * cols * 3)
-  const col = new Float32Array(rows * cols * 3)
-  const idx: number[] = []
-  for (let i = 0; i < rows; i++) {
-    const x = x0 + ((x1 - x0) * i) / segs
-    for (let j = 0; j < cols; j++) {
-      const y = yAt(x) + Math.sin(x * 0.47 + j) * 0.08
-      const o = (i * cols + j) * 3
-      pos[o] = x
-      pos[o + 1] = y
-      pos[o + 2] = zs[j]!
-      const c = new THREE.Color(colorAt(x, y))
-      col[o] = c.r
-      col[o + 1] = c.g
-      col[o + 2] = c.b
-    }
-  }
-  for (let i = 0; i < segs; i++) {
-    for (let j = 0; j < cols - 1; j++) {
-      const a = i * cols + j
-      idx.push(a, a + cols, a + 1, a + 1, a + cols, a + cols + 1)
-    }
-  }
-  const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-  geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
-  geo.setIndex(idx)
-  geo.computeVertexNormals()
-  const mesh = new THREE.Mesh(
-    geo,
-    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0.02 }),
-  )
-  mesh.receiveShadow = true
-  mesh.castShadow = true
-  return mesh
-}
-
-function waterMat(time: { value: number }): THREE.ShaderMaterial {
-  return new THREE.ShaderMaterial({
-    uniforms: { time },
-    transparent: true,
-    depthWrite: false,
-    vertexShader: `
-      uniform float time;
-      varying vec2 vUv;
-      void main() {
-        vec3 p = position;
-        p.y += sin(p.x * 0.55 + time * 1.3) * 0.07 + sin(p.z * 1.3 + time) * 0.04;
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform float time;
-      varying vec2 vUv;
-      void main() {
-        float wave = sin(vUv.x * 26.0 + time) * sin(vUv.y * 16.0 - time * 0.7);
-        vec3 deep = vec3(0.04, 0.20, 0.26);
-        vec3 shallow = vec3(0.27, 0.50, 0.46);
-        vec3 col = mix(deep, shallow, vUv.x * 0.8 + wave * 0.05);
-        gl_FragColor = vec4(col, 0.46);
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
-      }
-    `,
-  })
-}
-
-function causticMat(time: { value: number }): THREE.ShaderMaterial {
-  return new THREE.ShaderMaterial({
-    uniforms: { time },
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    vertexShader: `
-      varying vec2 vUv;
-      void main() {
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform float time;
-      varying vec2 vUv;
-      void main() {
-        float a = sin(vUv.x * 7.0 + time * 0.8) * sin(vUv.y * 5.0 - time * 0.5);
-        float b = sin(vUv.x * 13.0 - time * 0.6 + vUv.y * 8.0);
-        float c = pow(max(0.0, a * 0.55 + b * 0.45), 2.0);
-        gl_FragColor = vec4(0.55, 0.78, 0.7, 0.09 * c);
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
-      }
-    `,
-  })
-}

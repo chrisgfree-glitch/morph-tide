@@ -2,24 +2,40 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#102028" />
-    <meta name="description" content="EVO 2.0: Back to Eden — grow a body from the ancient sea to the first shore." />
+    <meta name="description" content="Morph Tide — grow a body from the ancient sea to the first shore." />
+    <meta name="apple-mobile-web-app-title" content="Morph Tide" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <title>EVO 2.0: Back to Eden</title>
+    <title>Morph Tide</title>
   </head>
   <body>
     <canvas id="view"></canvas>
     <div id="title">
       <p class="kicker">A lineage fable</p>
-      <h1>EVO 2.0</h1>
-      <p class="sub">Back to Eden</p>
-      <label>Name <input id="name" maxlength="16" value="Tidewisp" /></label>
+      <h1 class="mark">
+        <svg viewBox="0 0 560 148" role="img" aria-label="Morph Tide">
+          <text x="28" y="62" fill="#e7e0d4" font-family="Silkscreen, ui-monospace, monospace" font-size="54" letter-spacing="6">MORPH</text>
+          <text x="196" y="112" fill="#c4b59a" font-family="Silkscreen, ui-monospace, monospace" font-size="36" letter-spacing="10">TIDE</text>
+          <path d="M28 128 C 90 104, 150 148, 220 124 S 340 96, 420 128 S 500 150, 536 118" fill="none" stroke="#6e8e86" stroke-width="4" stroke-linecap="round"/>
+          <circle cx="508" cy="48" r="7" fill="#d4c4a4"/>
+        </svg>
+      </h1>
+      <label class="name" for="name">Name your creature</label>
+      <input id="name" maxlength="16" placeholder="e.g. Tidewalker" autocomplete="off" />
       <div id="colors" class="swatches"></div>
-      <button id="solo" type="button">Begin in the shallows</button>
-      <button id="online" type="button">Enter the living world</button>
+      <p class="goal">Eat, grow, and evolve from the ancient sea to the first shore</p>
+      <p class="path">Guppy → Steelhead (12 EP) → Sturgeon (18 EP). Defeat creatures to earn EP.</p>
+      <button id="solo" type="button">
+        <span class="solo-label">Begin in the shallows</span>
+        <span class="solo-sub">Enter the living world</span>
+      </button>
       <p id="title-msg"></p>
-      <p class="help">WASD to swim. W rises. Click to bite. E evolve, F dig, G gather.</p>
+      <div class="help" id="title-help">
+        <p><strong>Keyboard:</strong> WASD move · mouse drag or right-drag orbits, scroll zooms · click bites · Shift sprint · Space jump · C dive · F dig · B build · Tab lock · E evolve · Esc menu</p>
+        <p><strong>Touch:</strong> Left stick moves · two-finger or right-side drag orbits · Attack bites · Build opens place mode</p>
+        <p><strong>Controller:</strong> LS move · RS orbit · RT bite · LT horn · A jump · B dash · X dig · Y build · L3 sprint · R3 lock · Start menu</p>
+      </div>
     </div>
     <div id="rotate">
       <p class="turn">Rotate your phone</p>
@@ -30,26 +46,92 @@
       <span id="tier"></span>
       <span id="ep"></span>
       <div id="corner">
-        <button id="quality" type="button">Detail</button>
-        <button id="full" type="button">Full</button>
-        <button id="t-pause" type="button">Pause</button>
+        <button id="t-map" type="button" aria-label="Map">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M4 6l5-2 6 2 5-2v14l-5 2-6-2-5 2z"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>
+        </button>
+        <button id="view" type="button">Eye</button>
+        <button id="t-settings" type="button" aria-label="Menu">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm8.2 3.1-1.7-.3a6.6 6.6 0 0 0-.5-1.2l1-1.4a.8.8 0 0 0-.1-.9l-1.2-1.2a.8.8 0 0 0-.9-.1l-1.4 1a6.6 6.6 0 0 0-1.2-.5L13.9 4.3a.8.8 0 0 0-.7-.6h-1.6a.8.8 0 0 0-.7.6l-.3 1.7a6.6 6.6 0 0 0-1.2.5l-1.4-1a.8.8 0 0 0-.9.1L5.9 6.8a.8.8 0 0 0-.1.9l1 1.4a6.6 6.6 0 0 0-.5 1.2l-1.7.3a.8.8 0 0 0-.6.7v1.6c0 .4.3.7.6.7l1.7.3c.1.4.3.8.5 1.2l-1 1.4a.8.8 0 0 0 .1.9l1.2 1.2c.3.3.7.3.9.1l1.4-1c.4.2.8.4 1.2.5l.3 1.7c.1.4.4.6.7.6h1.6c.4 0 .7-.3.7-.6l.3-1.7c.4-.1.8-.3 1.2-.5l1.4 1c.3.2.7.2.9-.1l1.2-1.2c.3-.3.3-.7.1-.9l-1-1.4c.2-.4.4-.8.5-1.2l1.7-.3c.4-.1.6-.4.6-.7v-1.6a.8.8 0 0 0-.6-.7z"/></svg>
+        </button>
         <button id="t-evo" type="button">Evolve</button>
       </div>
+      <p id="goal"></p>
+      <button id="grow" type="button">Grow</button>
       <p id="banner"></p>
+      <p id="lock-tag" hidden></p>
       <p id="hint" hidden></p>
     </div>
     <div id="evo" class="panel" hidden>
       <header><h2>Evolve</h2><span id="evo-ep"></span><button id="evo-close" type="button">Close</button></header>
+      <canvas id="evo-preview" width="320" height="180"></canvas>
       <div id="evo-body"></div>
     </div>
     <div id="build" class="panel" hidden>
       <header><h2>Build</h2><button id="build-close" type="button">Close</button></header>
       <div id="build-body"></div>
     </div>
-    <div id="overlay" hidden>
-      <p id="overlay-text"></p>
-      <button id="resume" type="button">Continue</button>
+    <div id="map" class="panel" hidden>
+      <header><h2>Ocean</h2><button id="map-close" type="button">Close</button></header>
+      <canvas id="map-canvas" width="520" height="240"></canvas>
+      <p>The pale band is the first shore. The dot is you. Explored water stays marked.</p>
     </div>
+        <p id="pad-prompt" hidden>Controller connected</p>
+    <div id="pad-map" hidden>
+      <span>LS move</span><span>RS orbit</span><span>RT bite</span><span>LT horn</span><span>A jump</span><span>B dash</span><span>X dig</span><span>Y build</span><span>L3 sprint</span><span>R3 lock</span><span>Start menu</span>
+    </div>
+    <div id="build-tray" hidden>
+      <p id="build-status"></p>
+      <div id="build-picks"></div>
+      <p class="build-hint">Q/E rotate · click, A or RT place · X or F pick up (refund) · B or Esc leave</p>
+    </div>
+
+    <div id="select" class="panel menu-card" hidden>
+      <header><h2>Select</h2></header>
+      <button id="select-pause" type="button">Pause</button>
+      <button id="select-evolve" type="button">Select</button>
+      <button id="select-quit" type="button">Quit</button>
+    </div>
+    <div id="quit-ask" class="panel menu-card" hidden>
+      <header><h2>Quit</h2></header>
+      <p class="quit-copy">Save before quitting?</p>
+      <button id="quit-save" type="button">Save &amp; Quit</button>
+      <button id="quit-quit" type="button">Quit</button>
+      <button id="quit-cancel" type="button">Cancel</button>
+    </div>
+    <p id="save-toast" hidden>Saved</p>
+    <div id="settings" class="panel" hidden>
+      <header><h2>Pause</h2><button id="settings-close" type="button">Back</button></header>
+      <div id="pause-actions">
+        <button id="pause-resume" type="button">Resume</button>
+        <button id="pause-save" type="button">Save</button>
+        <button id="pause-load" type="button">Load</button>
+      </div>
+      <p class="path">Guppy → Steelhead (12 EP) → Sturgeon (18 EP). Defeat creatures to earn EP.</p>
+      <div class="help guide">
+        <p><strong>Keyboard:</strong> WASD move · mouse drag or right-drag orbits, scroll zooms · click bites · Shift sprint · Space jump · C dive · F dig · B build · Tab lock · E evolve · Esc menu. Mute is in this menu.</p>
+        <p><strong>Touch:</strong> Left stick moves · two-finger or right-side drag orbits · Attack bites · Build opens place mode</p>
+        <p><strong>Controller:</strong> LS move · RS orbit · RT bite · LT horn · A jump · B dash · X dig · Y build · LB/RB or D-pad cycle pieces · L3 sprint · R3 lock · Start menu · Back map</p>
+      </div>
+      <label>Look sensitivity <input id="set-sens" type="range" min="0.2" max="2" step="0.1" value="0.5" /></label>
+      <label class="check"><input id="set-invert" type="checkbox" /> Invert Y</label>
+      <label>Volume <input id="set-vol" type="range" min="0" max="1" step="0.05" value="0.7" /></label>
+      <button id="set-mute" type="button">Mute</button>
+      <label>Graphics
+        <select id="set-quality">
+          <option value="auto">Auto</option>
+          <option value="low">Low</option>
+          <option value="mid">Mid</option>
+          <option value="high">High</option>
+        </select>
+      </label>
+      <button id="set-restart" type="button">Restart</button>
+    </div>
+    <div id="overlay" hidden>
+      <h2 id="overlay-title"></h2>
+      <p id="overlay-text"></p>
+      <button id="resume" type="button">Retry</button>
+    </div>
+    <div id="look" hidden></div>
     <div id="touch" hidden>
       <div id="stick" class="stick"><div id="knob"></div></div>
       <div id="arc">
@@ -70,9 +152,12 @@
           <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5"></circle></svg>
           <svg class="ico" viewBox="0 0 24 24"><path d="M4 20V10l8-6 8 6v10H4z" fill="none" stroke="currentColor" stroke-width="2"/></svg>
         </button>
-        <button id="t-bite" class="primary" type="button" aria-label="Bite">
+        <button id="t-up" class="orb word" type="button" aria-label="Rise"><span class="lbl">Rise</span></button>
+        <button id="t-dive" class="orb word" type="button" aria-label="Dive"><span class="lbl">Dive</span></button>
+        <button id="t-bite" class="primary" type="button" aria-label="Attack">
           <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5"></circle></svg>
-          <svg class="ico" viewBox="0 0 24 24"><path d="M3 14c2 4 5 6 9 6s7-2 9-6c-2 1-4 1-6-1-1 2-3 3-3 3s-2-1-3-3c-2 2-4 2-6 1z" fill="currentColor"/></svg>
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19 L9 4 M10 19 L15 4 M16 19 L21 4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+          <span class="lbl">Attack</span>
         </button>
       </div>
     </div>

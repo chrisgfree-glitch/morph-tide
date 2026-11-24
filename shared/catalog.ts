@@ -26,6 +26,8 @@ export interface Loadout {
   spines: number
   ink: number
   barbels: number
+  /** 1–20 hide line, separate from evolution tier. */
+  skin: number
 }
 
 export interface Pick {
@@ -98,6 +100,7 @@ export function starterLoad(): Loadout {
     spines: 0,
     ink: 0,
     barbels: 0,
+    skin: 1,
   }
 }
 
@@ -206,6 +209,66 @@ export const TAIL_LINE: Step[] = [
   { name: 'Spiked tail', tier: 5, cost: 18, bite: 4, def: 1 },
   { name: 'Club tail', tier: 6, cost: 24, bite: 7, spd: -0.2 },
 ]
+
+export interface SkinTier {
+  name: string
+  dna: number
+  hides: number
+  mat: string
+  matN: number
+  gem: string
+  gemN: number
+  def: number
+  hp: number
+  spd: number
+}
+
+const SKIN_NAMES = [
+  'Bare skin',
+  'Soft scales',
+  'Pebble scales',
+  'Overlapping scales',
+  'Hardened scales',
+  'Ridge scales',
+  'Bony scutes',
+  'Keel scutes',
+  'Banded scutes',
+  'Light plates',
+  'Overlapping plates',
+  'Riveted plates',
+  'Lamellar armor',
+  'Carapace',
+  'Spiked plates',
+  'Obsidian plates',
+  'Gem-studded plates',
+  'Inlaid armor',
+  'Abyss mail',
+  'Legendary inlay',
+]
+const SKIN_GEMS = ['', '', '', '', '', '', '', '', '', '', '', '', '', '', 'topaz', 'onyx', 'sapphire', 'ruby', 'diamond', 'moonstone']
+
+function skinTable(): SkinTier[] {
+  let def = 0
+  return SKIN_NAMES.map((name, i) => {
+    const tier = i + 1
+    const add = tier === 1 ? 0 : Math.round(16 * 0.9 ** (tier - 2)) / 10
+    def = Math.round((def + add) * 10) / 10
+    return {
+      name,
+      dna: tier === 1 ? 0 : 4 + tier * tier,
+      hides: tier < 3 ? 0 : Math.ceil(tier * 0.65),
+      mat: tier < 5 ? '' : tier < 10 ? 'stone' : tier < 14 ? 'sticks' : 'stone',
+      matN: tier < 5 ? 0 : tier - 2,
+      gem: SKIN_GEMS[i] ?? '',
+      gemN: SKIN_GEMS[i] ? (tier >= 18 ? 2 : 1) : 0,
+      def,
+      hp: Math.round(def * 1.4),
+      spd: tier > 12 ? -0.04 * (tier - 12) : 0,
+    }
+  })
+}
+
+export const SKINS: SkinTier[] = skinTable()
 
 export const ARMOR_LINE: Step[] = [
   { name: 'Bare hide', tier: 1, cost: 0 },
@@ -472,6 +535,7 @@ export interface BuildDef {
 }
 
 export const BUILDINGS: BuildDef[] = [
+  { id: 'lean', name: 'Lean-to', tier: 1, hp: 22, heal: 1, storage: false, under: false, sea: true, cost: { kelp: 2 } },
   { id: 'nest', name: 'Nest', tier: 5, hp: 40, heal: 1, storage: false, under: false, sea: false, cost: { sticks: 4, mud: 2 } },
   { id: 'burrow', name: 'Burrow', tier: 3, hp: 30, heal: 0, storage: false, under: true, sea: false, cost: { mud: 3 } },
   { id: 'den', name: 'Den', tier: 5, hp: 70, heal: 2, storage: true, under: false, sea: false, cost: { sticks: 4, stone: 3, hide: 1 } },
@@ -507,7 +571,54 @@ export const NPC_CAP = 16
 export const SHARD_CAP = 100
 export const TICK_MS = 100
 
+export const ROCK_TINT: Record<string, number> = {
+  chalk: 0xece6d8,
+  pumice: 0xc9b8a4,
+  sandstone: 0xc9a06a,
+  shale: 0x6a6560,
+  limestone: 0xd4cdb8,
+  'coral-rock': 0xd48980,
+  slate: 0x4a5560,
+  flint: 0x3a3a3c,
+  granite: 0x8a8680,
+  basalt: 0x3c3a40,
+  marble: 0xf2eee8,
+  quartz: 0xe8dff0,
+  copper: 0xb87333,
+  'jade-rock': 0x3d7a5a,
+  iron: 0x6a5a52,
+  goldrock: 0xd4b24a,
+  lavarock: 0x8a3a28,
+  obsidian: 0x1a1a22,
+  geode: 0x7a68a0,
+  'deep-stone': 0x2a3048,
+}
+
+export const TREE_TINT: Record<string, number> = {
+  oak: 0x6a4a28,
+  pine: 0x3d5c3a,
+  birch: 0xe8dcc0,
+  redwood: 0x8a3a28,
+  palm: 0x8a7a3a,
+  mangrove: 0x4a5a38,
+  bamboo: 0x7a9a40,
+  baobab: 0xa08058,
+  ironwood: 0x4a4848,
+  ebony: 0x2a2018,
+  cedar: 0x8a5a32,
+  willow: 0x7a8a48,
+  cypress: 0x4a5c4a,
+  kapok: 0x8a6a40,
+  ferntree: 0x4a7a38,
+  cycad: 0x5a6a30,
+  ginkgo: 0xd4c44a,
+  bloodwood: 0x8a2020,
+  petrified: 0x6a6868,
+  driftwood: 0x8a7a68,
+}
+
 export function rockById(id: string): Rock | undefined {
+
   return ROCKS.find((r) => r.id === id)
 }
 

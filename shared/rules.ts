@@ -9,7 +9,9 @@ import {
   FEET,
   FIN_LINE,
   GEMS,
+  HIDES,
   HORNS,
+  SKINS,
   JAWS,
   LEG_LINE,
   LUNG_LINE,
@@ -57,6 +59,29 @@ export function tierOf(spent: number): number {
   let tier = 1
   for (let i = 0; i < TIER_SPENT.length; i++) if (spent >= TIER_SPENT[i]!) tier = i + 1
   return tier
+}
+
+export const FISH_STAGES = ['guppy', 'steelhead', 'sturgeon'] as const
+
+/** Next fish costs the EP still needed to reach that tier. Sturgeon is the last of the three. */
+export function fishGoal(spent: number, ep: number): { stage: string; next: string | null; cost: number; line: string } {
+  const tier = tierOf(spent)
+  const stage = FISH_STAGES[Math.min(2, tier - 1)] ?? 'guppy'
+  if (tier >= 3) {
+    return { stage: 'sturgeon', next: null, cost: 0, line: 'You are a sturgeon. Next goal: reach the first shore.' }
+  }
+  const need = TIER_SPENT[tier] ?? spent
+  const cost = Math.max(0, need - spent)
+  const next = FISH_STAGES[tier] ?? 'sturgeon'
+  return { stage, next, cost, line: `Defeat creatures to earn EP. ${cost} EP grows a ${next}. You have ${Math.floor(ep)}.` }
+}
+
+export function growFish(ep: number, spent: number): { ok: boolean; reason: string; ep: number; spent: number } {
+  const goal = fishGoal(spent, ep)
+  if (!goal.next) return { ok: false, reason: 'The sturgeon is grown. Next: reach the first shore.', ep, spent }
+  if (ep < goal.cost) return { ok: false, reason: `Need ${goal.cost} EP to grow a ${goal.next}.`, ep, spent }
+  const line = goal.next === 'steelhead' ? 'You are a steelhead. Next: eat and grow a sturgeon.' : 'You are a sturgeon. Next goal: reach the first shore.'
+  return { ok: true, reason: line, ep: ep - goal.cost, spent: spent + goal.cost }
 }
 
 export function maxWings(tier: number): number {
@@ -178,6 +203,12 @@ export function compute(load: Loadout, spent: number): Stats {
     s.fly += gem.fly
   }
   s.heat = (load.armor >= 2 ? 1 : 0) + (load.lungs >= 2 ? 1 : 0) + (load.spec === 'ruby' || load.spec === 'jade' ? 1 : 0)
+  const hide = SKINS[(load.skin || 1) - 1]
+  if (hide) {
+    s.def += hide.def
+    s.hp += hide.hp
+    s.spd += hide.spd
+  }
   s.bite = Math.max(1, s.bite)
   s.def = Math.max(0, s.def)
   s.hp = Math.max(16, Math.round(s.hp))
@@ -314,6 +345,39 @@ export function purchase(p: Progress, kind: string, id: string): Buy {
   return { ok: false, reason: 'No such upgrade' }
 }
 
+export function hideStock(bag: Record<string, number>): number {
+  return HIDES.reduce((n, h) => n + (bag[h.id] ?? 0), 0)
+}
+
+function spendHides(bag: Record<string, number>, need: number): void {
+  let left = need
+  for (const h of HIDES) {
+    if (left <= 0) break
+    const have = bag[h.id] ?? 0
+    const take = Math.min(have, left)
+    if (take) bag[h.id] = have - take
+    left -= take
+  }
+}
+
+/** Next skin tier. DNA is EP and does not raise the evolution tier. */
+export function buySkin(p: Progress, bag: Record<string, number>, gems: Record<string, number>): Buy {
+  const cur = Math.max(1, p.load.skin || 1)
+  if (cur >= SKINS.length) return { ok: false, reason: 'Skin line complete' }
+  const step = SKINS[cur]
+  if (!step) return { ok: false, reason: 'Skin line complete' }
+  if (p.ep < step.dna) return { ok: false, reason: `Need ${step.dna} DNA` }
+  if (hideStock(bag) < step.hides) return { ok: false, reason: `Need ${step.hides} hides` }
+  if (step.mat && (bag[step.mat] ?? 0) < step.matN) return { ok: false, reason: `Need ${step.matN} ${step.mat}` }
+  if (step.gem && (gems[step.gem] ?? 0) < step.gemN) return { ok: false, reason: `Need ${step.gemN} ${step.gem}` }
+  p.ep -= step.dna
+  spendHides(bag, step.hides)
+  if (step.mat) bag[step.mat] = (bag[step.mat] ?? 0) - step.matN
+  if (step.gem) gems[step.gem] = (gems[step.gem] ?? 0) - step.gemN
+  p.load.skin = cur + 1
+  return { ok: true, reason: step.name }
+}
+
 export function buySpec(p: Progress, gemId: string, have: number): Buy {
   if (p.load.spec) return { ok: false, reason: 'Already specialized' }
   if (tierOf(p.spent) < 10) return { ok: false, reason: 'Unlocks at tier 10' }
@@ -340,27 +404,84 @@ export function defenseCap(tier: number): number {
   return Math.min(8, Math.max(2, tier - 2))
 }
 
+const ROCK_JAW = new Set(['hook', 'under', 'pincer', 'hammer', 'tusk', 'plate'])
+const ROCK_TEETH = new Set(['molar', 'tusk', 'row'])
+const WOOD_JAW = new Set(['hook', 'pincer', 'saw', 'tusk', 'under'])
+const WOOD_TEETH = new Set(['needle', 'row', 'peg', 'saber', 'radula', 'molar'])
+
+/** Horns, crushing jaws, and spade arms vs a rock hardness class. 0 means no help. */
+export function bodyBreakPower(load: Loadout, cls: 'soft' | 'med' | 'hard' | 'very'): number {
+  let power = 0
+  const horn = hornById(load.horn)
+  if (horn && horn.feat && horn.feat !== 'none') {
+    const mul = cls === 'soft' ? 0.85 : cls === 'med' ? 1.15 : cls === 'hard' ? 0.7 : 0.2
+    power += (0.28 + (horn.bite ?? 0) * 0.08) * mul
+  }
+  const jaw = jawById(load.jaw)
+  if (jaw && (ROCK_JAW.has(jaw.feat ?? '') || (jaw.bite ?? 0) >= 6)) {
+    const mul = cls === 'soft' || cls === 'med' ? 1 : 0.3
+    power += (0.16 + (jaw.bite ?? 0) * 0.05) * mul
+  }
+  const teeth = teethById(load.teeth)
+  if (teeth && ROCK_TEETH.has(teeth.feat ?? '')) power += 0.12 * (cls === 'very' ? 0.2 : 1)
+  if (load.arms >= 2 && load.armType === 'spade') power += cls === 'soft' ? 0.9 : cls === 'med' ? 0.4 : 0.12
+  if (load.arms >= 2 && (load.armType === 'claw' || load.armType === 'blade')) power += cls === 'soft' ? 0.35 : 0.1
+  const feet = feetById(load.feet)
+  if (feet && (feet.dig ?? 0) > 0) power += (feet.dig ?? 0) * (cls === 'soft' ? 0.35 : 0.08)
+  return power
+}
+
+/** Jaws, cutting teeth, and bladed arms vs a wood class. */
+export function bodyChopPower(load: Loadout, cls: 'soft' | 'med' | 'hard' | 'very'): number {
+  let power = 0
+  const jaw = jawById(load.jaw)
+  if (jaw && (WOOD_JAW.has(jaw.feat ?? '') || (jaw.bite ?? 0) >= 5)) {
+    const mul = cls === 'soft' ? 1.1 : cls === 'med' ? 0.9 : cls === 'hard' ? 0.45 : 0.15
+    power += (0.22 + (jaw.bite ?? 0) * 0.06) * mul
+  }
+  const teeth = teethById(load.teeth)
+  if (teeth && WOOD_TEETH.has(teeth.feat ?? '')) {
+    const mul = cls === 'soft' || cls === 'med' ? 1 : 0.35
+    power += (0.14 + (teeth.bite ?? 0) * 0.04) * mul
+  }
+  if (load.arms >= 2 && (load.armType === 'blade' || load.armType === 'claw')) {
+    power += load.armType === 'blade' ? (cls === 'very' ? 0.15 : 0.45) : 0.2
+  }
+  const horn = hornById(load.horn)
+  if (horn && (horn.feat === 'crest' || horn.feat === 'spike')) power += cls === 'soft' ? 0.2 : 0.08
+  return power
+}
+
 export function cellSeconds(load: Loadout, spent: number, rockId: string): number | null {
   const rock = rockById(rockId)
   if (!rock) return null
   const tier = tierOf(spent)
   const mk = toolMk(tier)
-  const cls = rock.tier <= 2 ? 'soft' : rock.tier <= 5 ? 'med' : rock.tier <= 8 ? 'hard' : 'very'
+  const cls = rockClass(rock.tier)
+  const body = bodyBreakPower(load, cls)
   if (rock.tier <= 2) {
-    if (!canDig(load, spent)) return null
+    if (!canDig(load, spent) && body <= 0) return null
     const spade = load.arms >= 2 && load.armType === 'spade'
-    return spade ? 5 : 9
+    if (spade) return 5
+    if (canDig(load, spent)) return 9
+    return Math.max(6, 12 / Math.max(0.35, body))
   }
   const tool = breakerById(load.breaker)
-  if (!tool || mk < 1) return null
-  if (cls === 'very' && mk < 3) return null
-  if (cls === 'hard' && mk < 2) return null
-  const power = cls === 'soft' ? tool.soft : cls === 'med' ? tool.med : cls === 'hard' ? tool.hard : tool.very
-  const mkMul = mk === 1 ? 1 : mk === 2 ? 1.45 : 2.1
-  const factor = power * mkMul
-  if (factor <= 0) return null
-  const base = cls === 'soft' ? 8 : cls === 'med' ? 40 : cls === 'hard' ? 50 : 70
-  return base / factor
+  if (tool && mk >= 1) {
+    if (cls === 'very' && mk < 3) return null
+    if (cls === 'hard' && mk < 2) return null
+    const power = cls === 'soft' ? tool.soft : cls === 'med' ? tool.med : cls === 'hard' ? tool.hard : tool.very
+    const mkMul = mk === 1 ? 1 : mk === 2 ? 1.45 : 2.1
+    const factor = power * mkMul + body * 0.15
+    if (factor <= 0) return null
+    const base = cls === 'soft' ? 8 : cls === 'med' ? 40 : cls === 'hard' ? 50 : 70
+    return base / factor
+  }
+  if (cls === 'very') return null
+  if (cls === 'hard' && body < 0.85) return null
+  if (body <= 0) return null
+  const base = cls === 'med' ? 52 : 70
+  return base / body
 }
 
 export function chopSeconds(load: Loadout, spent: number, treeId: string): number | null {
@@ -368,15 +489,20 @@ export function chopSeconds(load: Loadout, spent: number, treeId: string): numbe
   if (!tree) return null
   const tier = tierOf(spent)
   const mk = toolMk(tier)
-  if (tier < 4 && load.size < 1.5 && compute(load, spent).bite < 14) return null
   const cls = woodClass(tree.cls)
-  if ((cls === 'very' || cls === 'hard') && mk < 2 && !load.cutter) return null
+  const body = bodyChopPower(load, cls)
+  const bite = compute(load, spent).bite
+  const canPart = body >= (cls === 'soft' ? 0.2 : cls === 'med' ? 0.35 : cls === 'hard' ? 0.7 : 1.2)
+  if (tier < 4 && load.size < 1.5 && bite < 14 && !load.cutter && !canPart) return null
+  if ((cls === 'very' || cls === 'hard') && mk < 2 && !load.cutter && body < 0.7) return null
   if (cls === 'very' && mk < 3) return null
   const tool = cutterById(load.cutter)
-  const power = tool ? (cls === 'soft' ? tool.soft : cls === 'med' ? tool.med : cls === 'hard' ? tool.hard : tool.very) : 0.45
+  const power = (tool ? (cls === 'soft' ? tool.soft : cls === 'med' ? tool.med : cls === 'hard' ? tool.hard : tool.very) : 0) + body * (tool ? 0.2 : 1)
+  if (power <= 0) return null
   const mkMul = mk >= 3 ? 2 : mk === 2 ? 1.4 : 1
   const size = load.size > 1.45 && tool?.id === 'ram' ? 1.4 : 1
-  return Math.max(2, 8 / (power * mkMul * size))
+  const fallback = tool ? 0 : cls === 'soft' ? 0.55 : 0.4
+  return Math.max(2, 8 / (Math.max(power, fallback) * mkMul * size))
 }
 
 export function gemChance(load: Loadout, spent: number, rockId: string): number {

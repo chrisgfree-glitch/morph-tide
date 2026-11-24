@@ -23,9 +23,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icons/icon-192.png', 'icons/icon-512.png'],
       manifest: {
-        name: 'EVO 2.0: Back to Eden',
-        short_name: 'EVO 2.0',
-        description: 'An original evolution action-platformer. Eat, adapt, and endure from the ancient seas to the first shores.',
+        name: 'Morph Tide',
+        short_name: 'Morph Tide',
+        description: 'An original evolution action game. Eat, adapt, and endure from the ancient seas to the first shores.',
         theme_color: '#071018',
         background_color: '#071018',
         display: 'standalone',

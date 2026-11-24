@@ -1,7 +1,10 @@
 import { starterLoad } from '../shared/catalog'
 import { columnSeconds } from '../shared/dig'
-import { createWorld, playerOf, step } from '../shared/sim'
-import { tierOf } from '../shared/rules'
+import { attackVolumes, volumeHits } from '../shared/body'
+import { applyWorldSnapshot, createWorld, playerOf, snapshotWorld, step } from '../shared/sim'
+import { applyGameSave, encodeGameSave, parseGameSave, serializeGameSave } from '../shared/save'
+import { canPlace, placePiece, refundPiece } from '../shared/build'
+import { bodyBreakPower, cellSeconds, chopSeconds, tierOf } from '../shared/rules'
 
 function t7() {
   const load = starterLoad()
@@ -63,4 +66,118 @@ young.bases[0]!.warn = 0.05
 step(young, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false })
 if (young.raiders.length) throw new Error('tier 2 base was raided')
 
-console.log(`deep stone full ${full.toFixed(1)}s tube ${tube.toFixed(1)}s vent ${vent.toFixed(1)}s; raids ok`)
+const horned = starterLoad()
+horned.horn = 'lance'
+if (bodyBreakPower(horned, 'med') <= 0) throw new Error('lance horn should help break medium rock')
+if (cellSeconds(horned, 30, 'granite') === null) throw new Error('lance horn should slowly break granite without a breaker')
+if (cellSeconds(horned, 30, 'deep-stone') !== null) throw new Error('a horn must not break deep stone')
+
+const saw = starterLoad()
+saw.jaw = 'saw'
+if (chopSeconds(saw, 12, 'birch') === null) throw new Error('saw jaw should cut soft birch')
+if (chopSeconds(starterLoad(), 0, 'birch') !== null) throw new Error('pebble nip should not cut birch')
+if (chopSeconds(saw, 12, 'petrified') !== null) throw new Error('a saw jaw must not cut petrified wood early')
+
+const spade = starterLoad()
+spade.arms = 2
+spade.armType = 'spade'
+spade.feet = 'claw'
+if (cellSeconds(spade, 55, 'sandstone') === null) throw new Error('spade arms should dig sandstone')
+
+const placed = createWorld()
+const trees = new Set(placed.nodes.filter((n) => n.kind === 'tree').map((n) => n.mat))
+const rocks = new Set(placed.nodes.filter((n) => n.kind === 'rock').map((n) => n.mat))
+if (trees.size < 20) throw new Error(`expected 20 tree kinds, got ${trees.size}`)
+if (rocks.size < 20) throw new Error(`expected 20 rock kinds, got ${rocks.size}`)
+
+console.log(`deep stone full ${full.toFixed(1)}s tube ${tube.toFixed(1)}s vent ${vent.toFixed(1)}s; raids ok; parts and nodes ok`)
+
+
+const vols = attackVolumes(starterLoad(), 0, false, 'you', 0, 0, 0, 0)
+if (!vols.some((v) => v.kind === 'jaw')) throw new Error('missing jaw volume')
+if (volumeHits(vols, 8, 0, 0, 0.2)) throw new Error('jaw should not reach 8m away')
+if (!volumeHits(vols, vols[0]!.x, vols[0]!.y, vols[0]!.z, 0.05)) throw new Error('jaw should hit at its own center')
+
+const gate = createWorld()
+const hero = playerOf(gate)
+hero.x = 130
+hero.y = 1.2
+hero.hp = 400
+hero.maxHp = 400
+hero.air = 400
+hero.spent = 200
+hero.load.lungs = 1
+hero.load.legs = 4
+hero.load.feet = 'claw'
+for (let i = 0; i < 20; i++) step(gate, 0.25, { ax: 1, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
+const boss = gate.ents.find((e) => e.kind === 'boss')
+if (!boss) throw new Error('colossus did not spawn past 128')
+boss.alive = false
+boss.hp = 0
+step(gate, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false })
+if (gate.won) throw new Error('defeating the colossus should open a gate, not win')
+if (!gate.gateOpen) throw new Error('colossus death should open the inland gate')
+
+
+const site = createWorld()
+const builder = playerOf(site)
+builder.bag.kelp = 2
+builder.x = 8
+builder.y = 1
+const ghost = canPlace(site, builder, 'lean', builder.x + 2, builder.y, 0, 0)
+if (!ghost.ok) throw new Error(`lean should be placeable: ${ghost.reason}`)
+const put = placePiece(site, builder, 'lean', builder.x + 2, builder.y, 0, 0)
+if (!put.ok || !put.piece) throw new Error(`lean-to place failed: ${put.reason}`)
+if ((builder.bag.kelp ?? 0) !== 0) throw new Error('lean-to should spend 2 kelp')
+if (site.pieces.length !== 1) throw new Error('piece not stored')
+const snap = snapshotWorld(site)
+const reload = createWorld()
+applyWorldSnapshot(reload, snap)
+if (reload.pieces.length !== 1 || reload.pieces[0]?.kind !== 'lean') throw new Error('pieces should persist in the world snapshot')
+const packed = refundPiece(reload, playerOf(reload), reload.pieces[0]!.id)
+if (!packed.ok) throw new Error(`refund failed: ${packed.reason}`)
+const left = reload.pieces.length
+if (left) throw new Error('refund should remove the piece')
+if ((playerOf(reload).bag.kelp ?? 0) < 2) throw new Error('refund should return kelp')
+const blockedBag = playerOf(createWorld())
+blockedBag.bag.kelp = 0
+const poor = canPlace(createWorld(), blockedBag, 'lean', 10, 1, 0, 0)
+if (poor.ok) throw new Error('lean-to must be red without kelp')
+console.log('lean-to places and refunds; pieces persist')
+
+const kept = createWorld()
+const savedYou = playerOf(kept)
+savedYou.x = 42.5
+savedYou.y = 2.25
+savedYou.z = -3.5
+savedYou.yaw = 1.2
+savedYou.pitch = 0.15
+savedYou.ep = 18
+savedYou.spent = 12
+savedYou.hp = 21
+savedYou.maxHp = 28
+savedYou.air = 9
+savedYou.bag.kelp = 3
+kept.eats = 4
+kept.gateOpen = true
+savedYou.bag.kelp = 2
+const built = placePiece(kept, savedYou, 'lean', savedYou.x + 2, savedYou.y, savedYou.z, 0)
+if (!built.ok) throw new Error(`save fixture lean failed: ${built.reason}`)
+const raw = serializeGameSave(encodeGameSave(kept))
+if (!raw.includes('"x":42.5')) throw new Error('save should include player position')
+const parsed = parseGameSave(raw)
+if (!parsed) throw new Error('parseGameSave failed')
+const restored = createWorld()
+applyGameSave(restored, parsed)
+const back = playerOf(restored)
+if (Math.abs(back.x - 42.5) > 0.001 || Math.abs(back.z - -3.5) > 0.001) throw new Error(`pose not restored: ${back.x},${back.z}`)
+if (back.ep !== 18 || back.spent !== 12 || restored.eats !== 4) throw new Error('progress not restored')
+if (!restored.gateOpen) throw new Error('gateOpen should restore')
+if (restored.pieces.length !== 1 || restored.pieces[0]?.kind !== 'lean') throw new Error('pieces should restore')
+if ((back.bag.kelp ?? 0) !== 0) throw new Error('bag after lean cost should restore')
+back.x = 99
+back.ep = 0
+restored.eats = 0
+applyGameSave(restored, parseGameSave(raw)!)
+if (Math.abs(playerOf(restored).x - 42.5) > 0.001 || playerOf(restored).ep !== 18 || restored.eats !== 4) throw new Error('second load should overwrite later changes')
+console.log('save/load round-trip')

@@ -5,13 +5,3 @@ dist
 .vite
 dev-dist
 *.tsbuildinfo
-
-# env / secrets / keys
-.env*
-!.env.example
-.vercel
-*.pem
-*.key
-keys
-id_rsa
-id_ed25519

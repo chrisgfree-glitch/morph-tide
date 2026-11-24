@@ -1,13 +1,23 @@
 export class Chiptune {
   private ctx: AudioContext | null = null
+  private master: GainNode | null = null
   muted = false
+  volume = 0.7
 
   unlock(): void {
     if (!this.ctx) {
       const Ctx = window.AudioContext
       this.ctx = new Ctx()
+      this.master = this.ctx.createGain()
+      this.master.gain.value = this.volume
+      this.master.connect(this.ctx.destination)
     }
     void this.ctx.resume()
+  }
+
+  setVolume(value: number): void {
+    this.volume = Math.max(0, Math.min(1, value))
+    if (this.master) this.master.gain.value = this.volume
   }
 
   private tone(freq: number, dur: number, type: OscillatorType, gain: number, delay = 0): void {
@@ -21,14 +31,14 @@ export class Chiptune {
     amp.gain.exponentialRampToValueAtTime(gain, t + 0.01)
     amp.gain.exponentialRampToValueAtTime(0.0001, t + dur)
     osc.connect(amp)
-    amp.connect(this.ctx.destination)
+    amp.connect(this.master ?? this.ctx.destination)
     osc.start(t)
     osc.stop(t + dur + 0.02)
   }
 
   blip(kind: string): void {
     if (kind === 'bite') this.tone(210, 0.08, 'square', 0.06)
-    else if (kind === 'hit' || kind === 'tower') this.tone(155, 0.07, 'square', 0.06)
+    else if (kind === 'hit' || kind === 'tower') this.tone(155, 0.07, 'square', 0.08)
     else if (kind === 'hurt' || kind === 'trap' || kind === 'geyser') this.tone(90, 0.16, 'sawtooth', 0.07)
     else if (kind === 'eat' || kind === 'gem') {
       this.tone(660, 0.07, 'square', 0.06)

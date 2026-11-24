@@ -10,23 +10,26 @@ import {
   teethById,
   type Loadout,
 } from '../shared/catalog'
+import { bodyBox } from '../shared/body'
+import { tierOf } from '../shared/rules'
 
 const GEO = {
-  trunk: profile(1.7, 0.26, 'fish'),
+  trunk: profile(1.85, 0.18, 'fish'),
   torso: profile(1.15, 0.24, 'land'),
   tail: profile(0.7, 0.16, 'tail'),
   skull: profile(0.55, 0.16, 'skull'),
   neck: new THREE.CapsuleGeometry(0.07, 0.16, 2, 6),
   upper: new THREE.CapsuleGeometry(0.055, 0.2, 2, 6),
   lower: new THREE.CapsuleGeometry(0.045, 0.18, 2, 5),
-  foot: new THREE.BoxGeometry(0.2, 0.06, 0.12),
-  jaw: new THREE.BoxGeometry(1, 0.22, 0.55),
+  foot: new THREE.SphereGeometry(0.12, 8, 6),
+  jaw: new THREE.SphereGeometry(0.5, 10, 8),
   tooth: new THREE.ConeGeometry(0.035, 0.11, 5),
   horn: new THREE.ConeGeometry(0.05, 0.26, 6),
   fin: finShape(),
   caudal: caudalShape(),
-  gill: new THREE.BoxGeometry(0.012, 0.16, 0.05),
-  plate: new THREE.BoxGeometry(0.22, 0.05, 0.28),
+  gill: new THREE.SphereGeometry(0.08, 8, 6),
+  plate: new THREE.SphereGeometry(0.16, 8, 6),
+  body: new THREE.SphereGeometry(0.5, 10, 8),
   eye: new THREE.SphereGeometry(1, 8, 6),
 }
 
@@ -123,14 +126,125 @@ function bump(kind: 'scale' | 'hide'): THREE.CanvasTexture {
   return tex
 }
 
+function texFromCanvas(c: HTMLCanvasElement, srgb = false, repeatX = 4, repeatY = 2): THREE.CanvasTexture {
+  const tex = new THREE.CanvasTexture(c)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.repeat.set(repeatX, repeatY)
+  tex.anisotropy = 4
+  tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace
+  tex.needsUpdate = true
+  return tex
+}
+
+/** Procedural scale albedo, normal, and roughness. Free, no external files. */
+function scaleMaps(): { color: THREE.CanvasTexture; normal: THREE.CanvasTexture; rough: THREE.CanvasTexture } {
+  const s = 256
+  const height = document.createElement('canvas')
+  height.width = height.height = s
+  const g = height.getContext('2d')!
+  g.fillStyle = '#7a7a7a'
+  g.fillRect(0, 0, s, s)
+  const cols = 10
+  const rows = 12
+  const rw = s / cols
+  const rh = s / rows
+  for (let y = -1; y <= rows; y++) {
+    for (let x = -1; x <= cols; x++) {
+      const cx = (x + 0.5) * rw + (y % 2 === 0 ? 0 : rw / 2)
+      const cy = (y + 0.4) * rh
+      const grd = g.createRadialGradient(cx, cy - 3, 2, cx, cy, rh * 0.72)
+      grd.addColorStop(0, '#e8e4dc')
+      grd.addColorStop(0.45, '#a8a8a4')
+      grd.addColorStop(0.82, '#6a6a68')
+      grd.addColorStop(1, '#2a2a2a')
+      g.fillStyle = grd
+      g.beginPath()
+      g.ellipse(cx, cy, rw * 0.5, rh * 0.58, 0, 0, Math.PI * 2)
+      g.fill()
+      g.strokeStyle = 'rgba(20,20,20,0.7)'
+      g.lineWidth = 1.6
+      g.stroke()
+      g.strokeStyle = 'rgba(255,255,255,0.45)'
+      g.lineWidth = 1.4
+      g.beginPath()
+      g.ellipse(cx, cy - 2, rw * 0.32, rh * 0.28, 0, Math.PI * 1.05, Math.PI * 1.9)
+      g.stroke()
+    }
+  }
+  const src = g.getImageData(0, 0, s, s)
+  const ncan = document.createElement('canvas')
+  ncan.width = ncan.height = s
+  const ng = ncan.getContext('2d')!
+  const nd = ng.createImageData(s, s)
+  const rcan = document.createElement('canvas')
+  rcan.width = rcan.height = s
+  const rg = rcan.getContext('2d')!
+  const rd = rg.createImageData(s, s)
+  const str = 4.2
+  const at = (x: number, y: number) => src.data[(((y + s) % s) * s + ((x + s) % s)) * 4]!
+  for (let y = 0; y < s; y++) {
+    for (let x = 0; x < s; x++) {
+      const dx = at(x + 1, y) - at(x - 1, y)
+      const dy = at(x, y + 1) - at(x, y - 1)
+      let nx = -dx * str
+      let ny = -dy * str
+      let nz = 255
+      const inv = 127.5 / Math.hypot(nx, ny, nz)
+      const i = (y * s + x) * 4
+      nd.data[i] = nx * inv + 128
+      nd.data[i + 1] = ny * inv + 128
+      nd.data[i + 2] = nz * inv + 128
+      nd.data[i + 3] = 255
+      const lum = at(x, y)
+      // Darker roughness = shinier scale faces; edges stay rougher.
+      const rough = Math.max(40, Math.min(220, 300 - lum))
+      rd.data[i] = rd.data[i + 1] = rd.data[i + 2] = rough
+      rd.data[i + 3] = 255
+    }
+  }
+  ng.putImageData(nd, 0, 0)
+  rg.putImageData(rd, 0, 0)
+  return {
+    color: texFromCanvas(height, true, 5, 3),
+    normal: texFromCanvas(ncan, false, 5, 3),
+    rough: texFromCanvas(rcan, false, 5, 3),
+  }
+}
+
+const SCALE = scaleMaps()
+const hideMats: THREE.MeshStandardMaterial[] = []
+
+export function bindHideTextures(color: THREE.Texture, normal: THREE.Texture, rough: THREE.Texture): void {
+  for (const m of hideMats) {
+    m.map = color
+    m.normalMap = normal
+    m.roughnessMap = rough
+    m.needsUpdate = true
+  }
+}
+
 function mat(color: number, rough: number, metal: number, skin: 'scale' | 'hide'): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
-    color,
-    roughness: rough,
-    metalness: metal,
-    bumpMap: BUMP[skin],
-    bumpScale: skin === 'scale' ? 0.035 : 0.02,
-  })
+  const m = new THREE.MeshStandardMaterial(
+    skin === 'scale'
+      ? {
+          color,
+          roughness: Math.min(rough, 0.32),
+          metalness: Math.max(metal, 0.16),
+          map: SCALE.color,
+          normalMap: SCALE.normal,
+          normalScale: new THREE.Vector2(1.4, 1.4),
+          roughnessMap: SCALE.rough,
+        }
+      : {
+          color,
+          roughness: rough,
+          metalness: metal,
+          bumpMap: BUMP.hide,
+          bumpScale: 0.02,
+        },
+  )
+  if (skin === 'hide') hideMats.push(m)
+  return m
 }
 
 function shift(hex: number, salt: number): number {
@@ -138,6 +252,128 @@ function shift(hex: number, salt: number): number {
   const n = ((salt % 7) - 3) / 7
   c.offsetHSL(n * 0.02, -0.06, n * 0.03)
   return c.getHex()
+}
+
+function attachSwim(mat: THREE.MeshStandardMaterial): { uTime: { value: number }; uAmp: { value: number }; uFreq: { value: number } } {
+  const uniforms = { uTime: { value: 0 }, uAmp: { value: 0.04 }, uFreq: { value: 2.4 } }
+  mat.customProgramCacheKey = () => 'swim'
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = uniforms.uTime
+    shader.uniforms.uAmp = uniforms.uAmp
+    shader.uniforms.uFreq = uniforms.uFreq
+    shader.vertexShader = `uniform float uTime;\nuniform float uAmp;\nuniform float uFreq;\n${shader.vertexShader}`
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+       float tailW = smoothstep(0.2, -0.95, transformed.x);
+       transformed.z += sin(uTime * uFreq + transformed.x * 5.0) * uAmp * tailW;`,
+    )
+  }
+  return uniforms
+}
+
+function stageBody(tier: number): THREE.LatheGeometry {
+  const len = tier === 1 ? 1.05 : tier === 2 ? 1.45 : 1.65
+  const rad = tier === 1 ? 0.3 : tier === 2 ? 0.32 : 0.16
+  const pts: THREE.Vector2[] = []
+  const n = 16
+  for (let i = 0; i <= n; i++) {
+    const t = i / n
+    let r = rad
+    if (tier === 1) {
+      const hump = Math.sin(Math.PI * Math.pow(Math.min(t, 0.92), 0.55))
+      const nose = t > 0.86 ? 0.72 : 1
+      r = rad * Math.max(0.2, hump * nose)
+    } else if (tier === 2) {
+      const hump = Math.sin(Math.PI * Math.pow(t, 0.62))
+      const nose = t > 0.86 ? 1 - (t - 0.86) / 0.14 * 0.4 : 1
+      r = rad * Math.max(0.28, hump * nose)
+    } else {
+      const hump = Math.pow(Math.sin(Math.PI * Math.min(t, 0.96)), 0.55)
+      const snout = t > 0.7 ? 1 - (t - 0.7) * 2.1 : 1
+      r = rad * Math.max(0.08, hump * snout)
+    }
+    pts.push(new THREE.Vector2(Math.max(0.015, r), (t - 0.5) * len))
+  }
+  const geo = new THREE.LatheGeometry(pts, 10)
+  geo.rotateZ(-Math.PI / 2)
+  if (tier === 3) geo.scale(1, 0.72, 1.15)
+  if (tier === 1) geo.scale(1, 1.15, 0.9)
+  geo.computeVertexNormals()
+  return geo
+}
+
+/** Tier 1 guppy, tier 2 steelhead, tier 3 sturgeon. The body wave is a vertex shader. */
+function stageFish(g: THREE.Group, tier: number, body: number, belly: number, accent: number): void {
+  const len = tier === 1 ? 1.05 : tier === 2 ? 1.45 : 1.65
+  const palettes = [
+    { body: 0xa6c84a, belly: 0xf3e4a8, accent: 0x4f8f78 },
+    { body: 0xb0bec6, belly: 0xeee8e0, accent: 0xc58a8a },
+    { body: 0x8a7040, belly: 0xd8c49a, accent: 0x5a4a30 },
+  ] as const
+  const pal = palettes[Math.max(0, Math.min(2, tier - 1))]!
+  const color = new THREE.Color(pal.body).lerp(new THREE.Color(body), 0.22).getHex()
+  const bellyCol = new THREE.Color(pal.belly).lerp(new THREE.Color(belly), 0.2).getHex()
+  const accentCol = new THREE.Color(pal.accent).lerp(new THREE.Color(accent), 0.25).getHex()
+  const geo = stageBody(tier)
+  const torso = part(g, geo, 0, 0, 0, 1, 1, 1, color, 'body', 0.3, 0.18, 'scale', true)
+  torso.userData.swim = attachSwim(torso.material as THREE.MeshStandardMaterial)
+  const eyeZ = tier === 1 ? 0.24 : tier === 2 ? 0.2 : 0.14
+  const eyeS = tier === 1 ? 0.1 : tier === 2 ? 0.065 : 0.045
+  for (const s of [-1, 1]) {
+    part(g, GEO.eye, len * 0.3, tier === 3 ? 0.08 : 0.05, s * eyeZ, eyeS, eyeS * 0.85, eyeS * 0.7, 0xf3efe4, '', 0.2, 0, 'hide', false)
+    part(g, GEO.eye, len * 0.33, tier === 3 ? 0.075 : 0.045, s * (eyeZ + 0.02), eyeS * 0.4, eyeS * 0.4, eyeS * 0.28, 0x1a221c, '', 0.35, 0.02, 'hide', false)
+  }
+  const fin = (x: number, y: number, z: number, sx: number, sy: number, name: string, rz: number) => {
+    const m = part(g, GEO.fin, x, y, z, sx, sy, 1, accentCol, name, 0.55, 0.02, 'scale', false)
+    m.rotation.z = rz
+    m.userData.baseZ = rz
+    const mat = m.material as THREE.MeshStandardMaterial
+    mat.transparent = true
+    mat.opacity = 0.9
+    mat.side = THREE.DoubleSide
+    return m
+  }
+  fin(len * 0.02, tier === 1 ? 0.28 : tier === 2 ? 0.2 : 0.1, 0, tier === 1 ? 0.4 : 0.55, tier === 3 ? 0.22 : 0.42, 'dorsal', 0.15)
+  const pecL = fin(len * 0.08, -0.02, -(eyeZ + 0.02), 0.5, 0.36, 'finL', 0.55)
+  const pecR = fin(len * 0.08, -0.02, eyeZ + 0.02, 0.5, 0.36, 'finR', -0.55)
+  pecL.rotation.y = -0.25
+  pecR.rotation.y = 0.25
+  fin(-len * 0.08, -0.14, -0.05, 0.22, 0.16, '', 1.4)
+  fin(-len * 0.08, -0.14, 0.05, 0.22, 0.16, '', -1.4)
+  fin(-len * 0.16, -0.08, 0, 0.34, 0.26, 'anal', Math.PI)
+  const tail = new THREE.Group()
+  tail.name = 'tail'
+  tail.position.set(-len * 0.48, 0, 0)
+  g.add(tail)
+  if (tier === 3) {
+    const upper = part(tail, GEO.fin, -0.02, 0.02, 0, 0.7, 1.35, 1, accentCol, 'caudal', 0.5, 0.02, 'scale', false)
+    upper.rotation.z = 0.85
+    const lower = part(tail, GEO.fin, 0.02, -0.02, 0, 0.22, 0.32, 1, accentCol, '', 0.5, 0.02, 'scale', false)
+    lower.rotation.z = -0.7
+    ;(upper.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide
+    ;(lower.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide
+    for (let i = 0; i < 5; i++) part(g, GEO.plate, len * 0.22 - i * 0.22, 0.09, 0, 0.42, 0.26, 0.34, 0xd8d0c2, '', 0.42, 0.18, 'hide', false)
+    part(g, GEO.lower, len * 0.28, -0.1, 0.035, 0.16, 0.55, 0.16, bellyCol, '', 0.85, 0, 'scale', false)
+    part(g, GEO.lower, len * 0.28, -0.1, -0.035, 0.16, 0.55, 0.16, bellyCol, '', 0.85, 0, 'scale', false)
+  } else {
+    const caudal = part(tail, GEO.caudal, 0, 0, 0, tier === 1 ? 0.85 : 1, tier === 2 ? 1.1 : 0.8, 1, accentCol, 'caudal', 0.5, 0.02, 'scale', false)
+    caudal.rotation.z = Math.PI
+    const mat = caudal.material as THREE.MeshStandardMaterial
+    mat.side = THREE.DoubleSide
+    mat.transparent = true
+    mat.opacity = 0.92
+  }
+  if (tier === 2) {
+    for (const s of [-1, 1]) {
+      const stripe = new THREE.Mesh(
+        new THREE.BoxGeometry(len * 0.7, 0.05, 0.02),
+        new THREE.MeshStandardMaterial({ color: 0xd48980, roughness: 0.5, metalness: 0.02 }),
+      )
+      stripe.position.set(0, 0.02, s * 0.3)
+      g.add(stripe)
+    }
+  }
 }
 
 function hash(text: string): number {
@@ -172,10 +408,12 @@ function part(
   return m
 }
 
-export function buildCreature(load: Loadout, spent: number, role: 'player' | 'npc' | 'boss'): THREE.Group {
+export function buildCreature(load: Loadout, spent: number, role: 'player' | 'npc' | 'boss', species = ''): THREE.Group {
   const g = new THREE.Group()
   const salt = hash(`${load.jaw}|${load.teeth}|${load.horn}|${load.color}|${role}`)
-  const body = shift(COLORS[load.color % COLORS.length] ?? 0x6e8e86, salt)
+  const speciesTint: Record<string, number> = { shrimp: 0xc4a090, needle: 0x7f97a0, bell: 0x8a7894, plate: 0x8a7d62 }
+  let body = shift(COLORS[load.color % COLORS.length] ?? 0x6e8e86, salt)
+  if (speciesTint[species]) body = new THREE.Color(body).lerp(new THREE.Color(speciesTint[species]!), 0.5).getHex()
   const accent = shift(ACCENTS[load.accent % ACCENTS.length] ?? 0xd4c4a4, salt + 2)
   const belly = new THREE.Color(body).lerp(new THREE.Color(0xe6d8c4), 0.35).getHex()
   const jaw = jawById(load.jaw) ?? jawById('nip')!
@@ -185,9 +423,19 @@ export function buildCreature(load: Loadout, spent: number, role: 'player' | 'np
   const style = styleById(load.wingStyle)
   const arm = armById(load.armType)
   const land = load.legs > 0
-  const skin: 'scale' | 'hide' = land && load.lungs > 0 ? 'hide' : 'scale'
-  const scale = 0.9 + load.size * 0.4 + (role === 'boss' ? 1.35 : 0) + Math.min(0.35, spent / 500)
-  g.scale.setScalar(scale)
+  const tier = tierOf(spent)
+  const skin: 'scale' | 'hide' = land && load.lungs > 0 ? 'hide' : tier >= 6 ? 'hide' : 'scale'
+  const box = bodyBox(load, spent, role === 'boss', species)
+  g.scale.set(box.scale * box.long, box.scale * box.tall, box.scale)
+  if (!land && role !== 'boss' && tier <= 3) {
+    stageFish(g, tier, body, belly, accent)
+    const hp = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.06), new THREE.MeshBasicMaterial({ color: 0x8f4d48 }))
+    hp.position.set(0.1, 0.55, 0)
+    hp.name = 'hp'
+    g.add(hp)
+    g.userData.hp = hp
+    return g
+  }
 
   part(g, land ? GEO.torso : GEO.trunk, land ? -0.05 : 0, 0, 0, 1, land ? 0.92 : 1, land ? 0.78 : 0.72, body, 'body', 0.68, 0.05, skin, true)
 
@@ -242,13 +490,13 @@ export function buildCreature(load: Loadout, spent: number, role: 'player' | 'np
     )
   }
   if (horn && horn.feat && horn.feat !== 'none') {
-    const spike = part(g, GEO.horn, headX - 0.05, headY + 0.2, 0, 1, 0.7 + (horn.bite ?? 1) * 0.15, 1, accent, '', 0.5, 0.12, 'hide', false)
+    const spike = part(g, GEO.horn, headX - 0.05, headY + 0.2, 0, 1, 0.7 + (horn.bite ?? 1) * 0.15, 1, accent, 'horn', 0.5, 0.12, 'hide', false)
     spike.rotation.z = -0.4
   }
   if (!land || load.lungs < 1) {
     for (const s of [-1, 1]) {
       for (let i = 0; i < 3; i++) {
-        const slit = part(g, GEO.gill, 0.28 - i * 0.045, 0.0, s * 0.16, 1, 0.7, 1, 0x3a4038, '', 0.7, 0.02, skin, false)
+        const slit = part(g, GEO.gill, 0.28 - i * 0.045, 0.0, s * 0.16, 1, 0.7, 1, tier >= 5 ? 0x6a3030 : 0x3a4038, 'gill', 0.7, 0.02, skin, false)
         slit.rotation.z = s * 0.15
       }
     }
@@ -271,7 +519,14 @@ export function buildCreature(load: Loadout, spent: number, role: 'player' | 'np
       pec.rotation.y = s > 0 ? 0.9 : -0.9
       pec.rotation.z = s * 0.4
       ;(pec.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide
+      const pelvic = part(g, GEO.fin, -0.15, -0.12, s * 0.08, 0.35, 0.28, 1, accent, '', 0.55, 0.02, skin, false)
+      pelvic.rotation.z = s * -0.6
+      ;(pelvic.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide
     }
+    const anal = part(g, GEO.fin, -0.45, -0.1, 0, 0.4 + load.tail * 0.05, 0.32, 1, accent, 'anal', 0.55, 0.02, skin, false)
+    anal.rotation.z = Math.PI
+    ;(anal.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide
+    part(g, GEO.plate, 0.05, 0.02, 0.15, 3.2, 0.08, 0.04, 0x2a3330, 'line', 0.8, 0, skin, false)
   }
   if (load.spines) {
     for (let i = 0; i < 4; i++) {
@@ -332,9 +587,35 @@ export function buildCreature(load: Loadout, spent: number, role: 'player' | 'np
   }
 
   if (load.breaker) part(g, GEO.horn, headX + 0.15, headY + 0.08, 0, 0.7, 0.55, 0.7, 0xcfc4b0, '', 0.4, 0.18, 'hide', false)
+  if (!land && tier >= 4 && (teeth.n ?? 0) >= 6) {
+    for (let i = 0; i < 3; i++) part(jawM, GEO.tooth, 0.05 + i * 0.12, 0.2, (i - 1) * 0.2, 0.7, 0.9, 0.5, 0xd8cfc0, '', 0.35, 0.1, 'hide', false)
+  }
+  if (!land && tier >= 5) {
+    part(g, GEO.eye, headX - 0.15, headY + 0.12, 0.08, 0.035, 0.03, 0.03, 0xf3efe6, '', 0.2, 0, 'hide', false)
+    part(g, GEO.eye, headX - 0.12, headY + 0.1, -0.08, 0.028, 0.024, 0.024, 0x1c2420, '', 0.3, 0, 'hide', false)
+  }
+  if (!land && (load.lure || tier >= 6)) {
+    const lure = part(g, GEO.eye, headX + 0.15, 0.28, 0, 0.06, 0.06, 0.06, 0xc6d6a8, 'lure', 0.25, 0.15, 'hide', false)
+    ;(lure.material as THREE.MeshStandardMaterial).emissive = new THREE.Color(0x8aaa62)
+  }
+  if (!land && (load.barbels || tier >= 7)) {
+    part(g, GEO.lower, headX, -0.2, 0.1, 0.35, 1.1, 0.35, 0x5a5048, 'tendril', 0.8, 0.02, 'hide', false)
+    part(g, GEO.lower, headX - 0.05, -0.18, -0.1, 0.3, 0.9, 0.3, 0x4a4038, 'tendril', 0.8, 0.02, 'hide', false)
+  }
   if (load.armor > 0) {
     for (let i = 0; i < load.armor + 1; i++) {
       part(g, GEO.plate, -0.15 + i * 0.2, 0.2, 0, 1, 1, 1, accent, '', 0.55, 0.1, skin, false)
+    }
+  }
+  const sk = load.skin || 1
+  const plateN = sk < 5 ? 0 : sk < 9 ? 2 : sk < 15 ? 4 : 6
+  const plateColor = sk >= 16 ? 0x3a342f : sk >= 9 ? 0x7a7268 : 0x8a8174
+  for (let i = 0; i < plateN; i++) {
+    const plate = part(g, GEO.plate, -0.35 + i * 0.22, 0.16 + (sk >= 9 ? 0.04 : 0), (i % 2) * 0.02, sk >= 12 ? 1.15 : 0.85, sk >= 9 ? 0.7 : 0.4, 1.1, plateColor, 'scute', 0.48, sk >= 16 ? 0.22 : 0.08, 'hide', false)
+    if (sk >= 16) (plate.material as THREE.MeshStandardMaterial).emissive = new THREE.Color(sk >= 20 ? 0x6a8a72 : 0x3a2a22)
+    if (sk >= 15 && i % 2 === 0) {
+      const spine = part(g, GEO.horn, -0.3 + i * 0.22, 0.28, 0, 0.4, 0.45, 0.4, plateColor, '', 0.4, 0.12, 'hide', false)
+      spine.rotation.z = 0.2
     }
   }
 
@@ -346,8 +627,8 @@ export function buildCreature(load: Loadout, spent: number, role: 'player' | 'np
   return g
 }
 
-export function creatureKey(load: Loadout, spent: number): string {
-  return JSON.stringify({ ...load, spent: Math.floor(spent / 40) })
+export function creatureKey(load: Loadout, spent: number, species = ''): string {
+  return JSON.stringify({ ...load, tier: tierOf(spent), bucket: Math.floor(spent / 40), species })
 }
 
 export function poseCreature(g: THREE.Group, time: number, moving: boolean, bite: number, facing: number): void {
@@ -355,20 +636,41 @@ export function poseCreature(g: THREE.Group, time: number, moving: boolean, bite
   g.userData.baseY = baseY
   const land = g.getObjectByName('neck')
   g.position.y = baseY + (moving ? Math.sin(time * 6) * 0.04 : Math.sin(time * 1.4) * 0.015)
-  g.rotation.y = facing > 0 ? 0 : Math.PI
-  g.rotation.z = moving && !land ? Math.sin(time * 5) * 0.05 : 0
+  const yaw = (g.userData.yaw as number | undefined) ?? (facing > 0 ? 0 : Math.PI)
+  g.rotation.y = -yaw
+  const prev = (g.userData.prevYaw as number | undefined) ?? yaw
+  let turn = yaw - prev
+  while (turn > Math.PI) turn -= Math.PI * 2
+  while (turn < -Math.PI) turn += Math.PI * 2
+  g.userData.prevYaw = yaw
+  const bank = Math.max(-0.45, Math.min(0.45, -turn * 3))
+  const wave = Math.sin(time * (moving ? 8 : 2.2))
+  g.rotation.z = (!land ? wave * (moving ? 0.05 : 0.015) : 0) + bank
+  g.traverse((obj) => {
+    const swimU = (obj as THREE.Mesh).userData?.swim as { uTime: { value: number }; uAmp: { value: number }; uFreq: { value: number } } | undefined
+    if (!swimU) return
+    swimU.uTime.value = time
+    swimU.uAmp.value = moving ? 0.2 : 0.045
+    swimU.uFreq.value = moving ? 8 : 2.2
+  })
   const tail = g.getObjectByName('tail')
   if (tail) {
-    const beat = Math.sin(time * (moving ? 9 : 2.2))
-    tail.rotation.y = beat * (moving ? 0.55 : 0.12)
-    tail.rotation.z = land ? beat * 0.08 : 0
+    const beat = Math.sin(time * (moving ? 7.5 : 2.1) - 0.9)
+    tail.rotation.y = beat * (moving ? 0.62 : 0.16)
+    tail.rotation.z = beat * (land ? 0.08 : moving ? 0.22 : 0.06)
   }
+  g.traverse((obj) => {
+    if (obj.name !== 'gill') return
+    const pulse = 0.75 + Math.sin(time * 3.2 + obj.position.x * 6) * 0.28
+    obj.scale.y = pulse
+  })
   const jaw = g.getObjectByName('jaw')
   if (jaw) jaw.rotation.z = bite > 0 ? -0.45 : Math.sin(time * 1.6) * 0.03
   const finL = g.getObjectByName('finL')
   const finR = g.getObjectByName('finR')
-  if (finL) finL.rotation.z = 0.35 + Math.sin(time * 4) * 0.15
-  if (finR) finR.rotation.z = -0.35 - Math.sin(time * 4) * 0.15
+  const flutter = moving ? 0.1 : 0.28
+  if (finL) finL.rotation.z = ((finL.userData.baseZ as number) ?? 0.35) + Math.sin(time * (moving ? 6 : 3)) * flutter
+  if (finR) finR.rotation.z = ((finR.userData.baseZ as number) ?? -0.35) - Math.sin(time * (moving ? 6 : 3)) * flutter
   g.traverse((obj) => {
     if (obj.name.startsWith('leg')) {
       const n = Number(obj.name.slice(3))
