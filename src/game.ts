@@ -1,13 +1,13 @@
 import * as THREE from 'three'
-import { ARM_TYPES, BREAKERS, BUILDINGS, COLOR_NAMES, COLORS, CUTTERS, DEFENSES, FEET, FIN_LINE, GEMS, HORNS, JAWS, SKINS, TAIL_LINE, TEETH, TIER_SPENT, WING_STYLES } from '../shared/catalog'
+import { ARM_TYPES, BREAKERS, BUILDINGS, COLOR_NAMES, COLORS, CUTTERS, DEFENSES, FEET, FIN_LINE, GEMS, HORNS, JAWS, ROCK_TINT, SKINS, TAIL_LINE, TEETH, TREE_TINT, TIER_SPENT, WING_STYLES, treeById } from '../shared/catalog'
 import { applyWorldSnapshot, buildAt, createWorld, nearestInCone, placeDefense, playerOf, snapshotWorld, step, tryPurchase, type Ent, type Frame, type World } from '../shared/sim'
 import { defenseCap, fishGoal, growFish, hideStock, tierOf } from '../shared/rules'
 import { audio } from './audio'
-import { bodyBox } from '../shared/body'
+import { attackVolumes, type HitVol } from '../shared/body'
 import { buildCreature, creatureKey, poseCreature } from './mesh'
 import { ChunkWorld } from './chunks'
 import { buildWater, loadPbr, setTerrainQuality } from './world3d'
-import { WATER, exportCarves, importCarves } from '../shared/terrain'
+import { WATER, exportCarves, groundAt, importCarves } from '../shared/terrain'
 
 const SAVE = 'evo2.eden.v2'
 
@@ -34,7 +34,10 @@ export class Game {
   private time = 0
   private sun: THREE.DirectionalLight
   private waterU = { value: 0 }
-  private bubbles: THREE.Mesh[] = []
+  private bubbles: THREE.InstancedMesh | null = null
+  private bubbleBases: { x: number; y: number; z: number; s: number }[] = []
+  private nodeGroup = new THREE.Group()
+  private hitDebug: THREE.Mesh[] = []
   private sAx = 0
   private sAy = 0
   private stick = { x: 0, y: 0 }
@@ -97,7 +100,7 @@ export class Game {
     this.renderer.toneMappingExposure = 1.12
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
+    this.renderer.setPixelRatio(this.pixelCap())
     this.renderer.setClearColor(0x1c3a42)
     this.scene.fog = new THREE.Fog(0x7f9698, 16, 46)
     this.scene.background = skyTexture()
@@ -118,6 +121,8 @@ export class Game {
     cool.position.set(-8, 4, -6)
     this.scene.add(cool)
     this.scene.add(this.decor)
+    this.scene.add(this.nodeGroup)
+    this.debug = new URLSearchParams(location.search).get('debug') === 'hit'
     const dbg = new THREE.BufferGeometry()
     dbg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(400 * 3), 3))
     this.debugLine = new THREE.LineSegments(dbg, new THREE.LineBasicMaterial({ color: 0xb7e2c2 }))
@@ -149,6 +154,11 @@ export class Game {
 
   private phoneLayout(): boolean {
     return window.matchMedia('(pointer: coarse)').matches || window.innerHeight <= 520
+  }
+
+  private pixelCap(): number {
+    const dpr = window.devicePixelRatio || 1
+    return Math.min(this.phoneLayout() ? 1.35 : 2, dpr)
   }
 
   private resize(): void {
@@ -189,19 +199,34 @@ export class Game {
       vent.castShadow = true
       g.add(vent)
     }
-    const count = this.quality === 'high' ? 18 : 8
-    const bubbleMat = new THREE.MeshStandardMaterial({ color: 0xd5e4e0, roughness: 0.15, metalness: 0.05, transparent: true, opacity: 0.45 })
-    for (let i = 0; i < count; i++) {
-      const b = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), bubbleMat)
-      b.position.set(6 + (i * 3.7) % 58, 0.6 + (i % 5), (i % 3) - 1)
-      b.userData.baseX = b.position.x
-      g.add(b)
-      this.bubbles.push(b)
+    this.spawnBubbles(g)
+  }
+
+  private spawnBubbles(g: THREE.Group): void {
+    if (this.bubbles) {
+      this.bubbles.removeFromParent()
+      this.bubbles.geometry.dispose()
     }
+    const count = this.quality === 'high' ? 40 : this.quality === 'mid' ? 22 : 10
+    const bubbleMat = new THREE.MeshStandardMaterial({ color: 0xd5e4e0, roughness: 0.15, metalness: 0.05, transparent: true, opacity: 0.45 })
+    const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.08, 8, 6), bubbleMat, count)
+    mesh.frustumCulled = false
+    this.bubbleBases = []
+    const dummy = new THREE.Object3D()
+    for (let i = 0; i < count; i++) {
+      const base = { x: 6 + (i * 3.7) % 58, y: 0.6 + (i % 7) * 0.55, z: (i % 5) - 2, s: 0.7 + (i % 4) * 0.18 }
+      this.bubbleBases.push(base)
+      dummy.position.set(base.x, base.y, base.z)
+      dummy.scale.setScalar(base.s)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(i, dummy.matrix)
+    }
+    g.add(mesh)
+    this.bubbles = mesh
   }
 
   private applyQuality(): void {
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
+    this.renderer.setPixelRatio(this.pixelCap())
     const shadows = this.quality !== 'low'
     this.renderer.shadowMap.enabled = shadows
     this.sun.castShadow = shadows
@@ -539,9 +564,9 @@ export class Game {
     if (hint && !localStorage.getItem('evo2.hinted')) {
       hint.hidden = false
       hint.textContent = touch
-        ? 'You drift forward on your own. The left stick steers. Drag the right side to look (look up to rise, down to dive). Attack locks on and lunges. M opens the map. Esc pauses.'
-        : 'You drift forward on your own. Mouse looks (look up to rise, down to dive). Click attacks the nearest creature ahead. WASD steers. E evolves when you have enough EP. M opens the map. Esc pauses.'
-      this.hintLeft = 7
+        ? 'Eat 5 fish to start. The left stick steers. Drag the right side to look. Attack locks on and lunges. When a predator flashes, swim aside.'
+        : 'Eat 5 fish to start. Mouse looks, click bites, WASD steers. E evolves. When a predator flashes, dart aside.'
+      this.hintLeft = 8
       localStorage.setItem('evo2.hinted', '1')
     }
     this.save()
@@ -695,6 +720,9 @@ export class Game {
     } else if (kind === 'evolve') {
       this.kickCam(0.16, 0.45, 0.85)
       navigator.vibrate?.(45)
+      const you = playerOf(this.world)
+      this.burst(you.x, you.y + 0.3, 0xc4f0d8, 'Evolved')
+      this.world.hitStop = Math.max(this.world.hitStop, 0.09)
     } else if (kind === 'hurt' || kind === 'trap' || kind === 'geyser') {
       this.kickCam(0.2)
       navigator.vibrate?.(80)
@@ -711,6 +739,93 @@ export class Game {
     this.punch.amp = Math.max(amp, leftover)
     this.punch.ax = ax
     this.punch.ay = ay
+  }
+
+  private placeCamera(you: Ent, _dt: number): void {
+    const aheadX = Math.cos(you.yaw)
+    const aheadZ = Math.sin(you.yaw)
+    const lookX = aheadX * 0.35 * you.vx + you.x
+    const lookZ = aheadZ * 0.35 * you.vz + you.z
+    if (this.firstPerson) {
+      this.camGoal.set(you.x - aheadX * 0.15, you.y + 0.32, you.z - aheadZ * 0.15)
+      this.lookGoal.set(you.x + aheadX * 1.4, you.y + 0.04 + Math.sin(this.pitch) * 1.2, you.z + aheadZ * 1.4)
+      this.camera.near = 0.04
+      return
+    }
+    this.camera.near = 0.1
+    const tight = you.biteT > 0 || this.dashT > 0
+    const dist = this.camDist * (tight ? 0.62 : 1)
+    const height = tight ? 1.15 : 1.7
+    this.camGoal.set(you.x - aheadX * dist, you.y + height, you.z - aheadZ * dist)
+    this.lookGoal.set(lookX + aheadX * 8, you.y + 0.5 + Math.sin(this.pitch) * 4, lookZ + aheadZ * 8)
+    this.probeCamera(you)
+  }
+
+  private probeCamera(you: Ent): void {
+    const fromX = you.x
+    const fromY = you.y + 0.55
+    const fromZ = you.z
+    const to = this.camGoal
+    const steps = 10
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps
+      const x = fromX + (to.x - fromX) * t
+      const y = fromY + (to.y - fromY) * t
+      const z = fromZ + (to.z - fromZ) * t
+      const floor = groundAt(x, z, y) + 0.5
+      if (y < floor) {
+        const back = (i - 1) / steps
+        to.set(fromX + (to.x - fromX) * back, Math.max(fromY + (to.y - fromY) * back, floor), fromZ + (to.z - fromZ) * back)
+        break
+      }
+    }
+  }
+
+  private stepBubbles(dt: number, sea: boolean): void {
+    const mesh = this.bubbles
+    if (!mesh) return
+    mesh.visible = sea
+    if (!sea) return
+    const dummy = new THREE.Object3D()
+    for (let i = 0; i < this.bubbleBases.length; i++) {
+      const b = this.bubbleBases[i]!
+      b.y += dt * 0.7
+      if (b.y > 5.4) b.y = 0.4
+      dummy.position.set(b.x + Math.sin(this.time + b.y) * 0.15, b.y, b.z)
+      dummy.scale.setScalar(b.s)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(i, dummy.matrix)
+    }
+    mesh.instanceMatrix.needsUpdate = true
+  }
+
+  private syncNodes(): void {
+    const needed = this.world.nodes.length
+    while (this.nodeGroup.children.length < needed) {
+      const m = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(0.28, 0),
+        new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.86, metalness: 0.04 }),
+      )
+      m.castShadow = true
+      this.nodeGroup.add(m)
+    }
+    this.nodeGroup.children.forEach((obj, i) => {
+      const node = this.world.nodes[i]
+      const mesh = obj as THREE.Mesh
+      if (!node || node.amount <= 0) {
+        mesh.visible = false
+        return
+      }
+      mesh.visible = true
+      const z = ((node.id % 5) - 2) * 1.6
+      const y = groundAt(node.x, z, 8)
+      mesh.position.set(node.x, y + 0.25, z)
+      const tint = TREE_TINT[node.mat] ?? ROCK_TINT[node.mat] ?? (node.kind === 'mat' ? 0x6a8a58 : 0x8a8070)
+      const mat = mesh.material as THREE.MeshStandardMaterial
+      mat.color.setHex(tint)
+      const tree = treeById(node.mat)
+      mesh.scale.setScalar(node.kind === 'tree' ? (tree?.cls === 'hard' ? 1.15 : 0.9) : node.kind === 'rock' ? 0.85 : 0.55)
+    })
   }
 
   private applyCamFeel(dt: number): void {
@@ -999,24 +1114,18 @@ export class Game {
           this.burst(e.x, e.y, e.t === 'hit' ? 0xffe6a0 : 0xc4b59a, e.text)
           if (e.t === 'hit') this.flashHit(e.x, e.y)
         }
-        if (e.t === 'eat') this.burst(e.x, e.y, 0xf0e0a8, e.text)
+        if (e.t === 'eat') {
+          this.burst(e.x, e.y, 0xf0e0a8, e.text)
+          this.world.hitStop = Math.max(this.world.hitStop, 0.055)
+        }
+        if (e.t === 'gate') this.burst(e.x, e.y, 0xd4c4a4, e.text)
+        if (e.t === 'warn') this.flashHit(e.x, e.y)
       }
     }
     this.sync()
     const you = playerOf(this.world)
     const sea = you.region === 'sea'
-    const aheadX = Math.cos(you.yaw)
-    const aheadZ = Math.sin(you.yaw)
-    if (this.firstPerson) {
-      this.camGoal.set(you.x - aheadX * 0.15, you.y + 0.32, you.z - aheadZ * 0.15)
-      this.lookGoal.set(you.x + aheadX * 1.4, you.y + 0.04 + Math.sin(this.pitch) * 1.2, you.z + aheadZ * 1.4)
-      this.camera.near = 0.04
-    } else {
-      this.camera.near = 0.1
-      const dist = this.camDist
-      this.camGoal.set(you.x - aheadX * dist, you.y + 1.7, you.z - aheadZ * dist)
-      this.lookGoal.set(you.x + aheadX * 8, you.y + 0.5 + Math.sin(this.pitch) * 4, you.z + aheadZ * 8)
-    }
+    this.placeCamera(you, dt)
     this.chunks?.update(you.x, you.z)
     this.chunks?.tick(this.time)
     const groundMat = this.chunks?.material as THREE.ShaderMaterial | undefined
@@ -1035,9 +1144,10 @@ export class Game {
     const actBtn = document.getElementById('t-act')
     if (actLbl) actLbl.textContent = near ? 'Get' : 'Dig'
     actBtn?.setAttribute('aria-label', near ? 'Gather' : 'Dig')
-    const ck = 1 - Math.exp(-dt * 1.8)
+    const tight = you.biteT > 0 || this.dashT > 0
+    const ck = 1 - Math.exp(-dt * (tight ? 10 : 5.5))
     this.camPos.lerp(this.camGoal, ck)
-    this.lookPos.lerp(this.lookGoal, 1 - Math.exp(-dt * 3.2))
+    this.lookPos.lerp(this.lookGoal, 1 - Math.exp(-dt * (tight ? 8 : 5)))
     this.camera.position.copy(this.camPos)
     this.applyCamFeel(dt)
     this.camera.lookAt(this.lookPos)
@@ -1046,22 +1156,22 @@ export class Game {
     this.sun.target.position.set(you.x, 1, 0)
     const fog = this.scene.fog as THREE.Fog
     const under = this.camera.position.y < WATER && this.camera.position.x < 78
-    const fogColor = under ? new THREE.Color(0x145e68) : you.region === 'volcano' ? new THREE.Color(0x8a6a58) : new THREE.Color(0xc5d0c8)
-    fog.color.lerp(fogColor, 0.25)
-    fog.near = under ? 2.5 : 22
-    fog.far = under ? 32 : 140
-    this.renderer.setClearColor(under ? 0x0e4c56 : 0xc5d0c8)
+    const zone = you.region
+    const fogColor = under
+      ? new THREE.Color(0x0a5460)
+      : zone === 'volcano'
+        ? new THREE.Color(0x8a4030)
+        : zone === 'sea'
+          ? new THREE.Color(0x6aa8b0)
+          : new THREE.Color(0xd2c4a4)
+    fog.color.lerp(fogColor, 0.2)
+    fog.near = under ? 2 : zone === 'volcano' ? 10 : zone === 'sea' ? 16 : 20
+    fog.far = under ? 26 : zone === 'volcano' ? 70 : zone === 'sea' ? 90 : 120
+    this.renderer.setClearColor(under ? 0x083e48 : zone === 'volcano' ? 0x6a382c : zone === 'sea' ? 0x7eb4b8 : 0xd2c4a4)
+    this.renderer.toneMappingExposure = zone === 'volcano' ? 1.06 : zone === 'sea' ? 1.16 : 1.2
     this.adaptResolution(dt)
-    for (const b of this.bubbles) {
-      if (!sea) {
-        b.visible = false
-        continue
-      }
-      b.visible = true
-      b.position.y += dt * 0.7
-      b.position.x = (b.userData.baseX as number) + Math.sin(this.time + b.position.y) * 0.15
-      if (b.position.y > 5.4) b.position.y = 0.4
-    }
+    this.stepBubbles(dt, sea)
+    this.syncNodes()
     if (this.hintLeft > 0) {
       this.hintLeft -= dt
       if (this.hintLeft <= 0) {
@@ -1182,33 +1292,39 @@ export class Game {
   }
 
   private paintDebug(): void {
-    this.debugLine.visible = this.debug
+    this.debugLine.visible = false
     const btn = document.getElementById('hit')
     if (btn) btn.textContent = this.debug ? 'Hit on' : 'Hit'
-    if (!this.debug) return
-    const pos = this.debugLine.geometry.getAttribute('position') as THREE.BufferAttribute
-    let n = 0
-    const put = (x1: number, y1: number, x2: number, y2: number) => {
-      if (n + 2 > pos.count) return
-      pos.setXYZ(n++, x1, y1, 0.5)
-      pos.setXYZ(n++, x2, y2, 0.5)
+    if (!this.debug) {
+      for (const m of this.hitDebug) m.visible = false
+      return
     }
+    const vols: HitVol[] = []
     for (const e of this.world.ents) {
       if (!e.alive || e.kind === 'meat') continue
-      const b = bodyBox(e.load, e.spent, e.kind === 'boss', e.species)
-      const x = e.x
-      const y = e.kind === 'player' || e.region !== 'sea' ? Math.max(e.y, 1.05) : e.y
-      put(x - b.len / 2, y - b.rad, x + b.len / 2, y - b.rad)
-      put(x + b.len / 2, y - b.rad, x + b.len / 2, y + b.rad)
-      put(x + b.len / 2, y + b.rad, x - b.len / 2, y + b.rad)
-      put(x - b.len / 2, y + b.rad, x - b.len / 2, y - b.rad)
-      const mx = x + e.facing * b.mouth
-      const my = y + b.rad * 0.1
-      put(mx - b.biteR, my, mx + b.biteR, my)
-      put(mx, my - b.biteR, mx, my + b.biteR)
+      vols.push(...attackVolumes(e.load, e.spent, e.kind === 'boss', e.species, e.x, e.y, e.z, e.yaw))
     }
-    pos.needsUpdate = true
-    this.debugLine.geometry.setDrawRange(0, n)
+    const colors = { jaw: 0xffe6a0, horn: 0xd4a0ff, claw: 0xa0e6ff }
+    while (this.hitDebug.length < vols.length) {
+      const m = new THREE.Mesh(
+        new THREE.SphereGeometry(1, 12, 8),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.8, depthTest: false }),
+      )
+      m.frustumCulled = false
+      this.scene.add(m)
+      this.hitDebug.push(m)
+    }
+    this.hitDebug.forEach((m, i) => {
+      const v = vols[i]
+      if (!v) {
+        m.visible = false
+        return
+      }
+      m.visible = true
+      m.position.set(v.x, v.y, v.z)
+      m.scale.setScalar(Math.max(0.06, v.r))
+      ;(m.material as THREE.MeshBasicMaterial).color.setHex(colors[v.kind])
+    })
   }
 
   private sync(): void {
@@ -1233,7 +1349,25 @@ export class Game {
       group.userData.yaw = e.yaw
       group.position.set(e.x, y, e.z)
       group.visible = true
-      poseCreature(group, this.time + e.salt, Math.abs(e.vx) + Math.abs(e.vy) > 0.25, e.biteT, e.facing)
+      poseCreature(group, this.time + e.salt, Math.abs(e.vx) + Math.abs(e.vy) > 0.25, e.biteT > 0 || e.tele > 0 ? 1 : 0, e.facing)
+      if (e.tele > 0) {
+        group.userData.teleGlow = true
+        const pulse = 0.4 + Math.sin(this.time * 14) * 0.3
+        group.traverse((obj) => {
+          const mat = (obj as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined
+          if (!mat || !mat.emissive) return
+          mat.emissive.setHex(0xff6a3a)
+          mat.emissiveIntensity = pulse
+        })
+      } else if (group.userData.teleGlow && !(group.userData.flash > 0)) {
+        group.userData.teleGlow = false
+        group.traverse((obj) => {
+          const mat = (obj as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined
+          if (!mat || !mat.emissive) return
+          mat.emissive.setHex(0x000000)
+          mat.emissiveIntensity = 0
+        })
+      }
       const hp = group.userData.hp as THREE.Object3D | undefined
       if (hp) hp.scale.x = Math.max(0.05, e.hp / e.maxHp)
     }
@@ -1289,8 +1423,7 @@ export class Game {
     set('ep', goal.next ? `EP ${Math.floor(you.ep)}/${goal.cost}` : `EP ${Math.floor(you.ep)}`)
     const stageName = goal.stage.charAt(0).toUpperCase() + goal.stage.slice(1)
     set('tier', tier >= 3 ? 'Sturgeon · Tier 3/3' : `${stageName} · Tier ${tier}/3 · Growth ${growth}%`)
-    const path = 'Guppy → Steelhead (12 EP) → Sturgeon (18 EP).'
-    set('goal', you.x >= 66 && tier >= 3 ? 'The first shore. Next: keep growing inland.' : `${path} ${goal.line}`)
+    set('goal', earlyGoal(this.world, you, goal.line))
     const grow = document.getElementById('grow') as HTMLButtonElement | null
     if (grow) {
       grow.hidden = !goal.next
@@ -1318,13 +1451,8 @@ export class Game {
     set('banner', this.world.bannerT > 0 ? this.world.banner : '')
     const over = document.getElementById('overlay')
     const again = document.getElementById('resume')
-    if (over) over.hidden = !this.world.over && !this.world.won
-    if (this.world.won) {
-      const shore = tier >= TIER_SPENT.length && you.x >= 66
-      set('overlay-title', shore ? 'The first shore' : 'The shore goes quiet')
-      set('overlay-text', shore ? 'You reached the first shore at the height of your line.' : 'The colossus stills. The tide keeps the body you grew.')
-      if (again) again.textContent = 'Swim again'
-    } else if (this.world.over) {
+    if (over) over.hidden = !this.world.over
+    if (this.world.over) {
       set('overlay-title', 'The body fails')
       set('overlay-text', 'Your parts stay with you. Wake in the shallows and try again.')
       if (again) again.textContent = 'Retry'
@@ -1405,6 +1533,21 @@ export function mount(): Game | null {
   }
   ;(window as unknown as { evo: typeof api }).evo = api
   return game
+}
+
+function earlyGoal(w: World, you: Ent, fallback: string): string {
+  if (w.eats < 5) return `Eat 5 fish (${w.eats}/5)`
+  if (you.load.lungs < 1) {
+    if (you.spent < 12) return 'Grow lungs — first grow a steelhead, then Evolve (E)'
+    return you.ep >= 6 ? 'Grow lungs — open Evolve (E)' : 'Grow lungs — earn 6 EP, then Evolve (E)'
+  }
+  const mine = w.bases.some((b) => b.owner === you.id)
+  if (!mine) return 'Dig a den — gather 2 kelp, then Build (B) a lean-to'
+  if (you.x < 66) return 'Reach the first shore'
+  const boss = w.ents.find((e) => e.kind === 'boss')
+  if (boss?.alive) return 'The Strand Colossus bars the inland. Defeat it to pass.'
+  if (w.gateOpen && you.x < 168) return 'The inland is open. Keep growing.'
+  return fallback
 }
 
 function ring(id: string, left: number, max: number): void {
