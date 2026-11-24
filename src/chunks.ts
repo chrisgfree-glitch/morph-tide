@@ -135,8 +135,11 @@ export class ChunkWorld {
       n: 0,
     }))
     for (let c = 0; c < clusters; c++) {
-      const px = cx * CHUNK + ((c * 29 + 8) % CHUNK) - CHUNK * 0.15
-      const pz = cz * CHUNK + ((c * 17 + 5) % CHUNK) - CHUNK * 0.2
+      let px = cx * CHUNK + ((c * 29 + 8) % CHUNK) - CHUNK * 0.15
+      let pz = cz * CHUNK + ((c * 17 + 5) % CHUNK) - CHUNK * 0.2
+      if (cx === 0 && cz === 0 && c === 0) { px = 8.2; pz = 1.4 }
+      if (cx === 0 && cz === 0 && c === 1) { px = 11.5; pz = -2.1 }
+      if (cx === 0 && cz === 0 && c === 2) { px = 5.6; pz = -1.2 }
       const members = 2 + ((c + (px < 72 ? 2 : 0)) % (per - 1))
       for (let i = 0; i < members; i++) {
         const seed = (c * 3 + i) % geos.length
@@ -144,7 +147,7 @@ export class ChunkWorld {
         const x = px + ((i * 1.15 + c * 0.4) % 3.2) - 1.4
         const z = pz + ((i * 0.9 + c * 0.55) % 2.6) - 1.1
         const y = groundAt(x, z, 6)
-        const s = 0.38 + ((c * 5 + i * 3) % 7) * 0.16
+        const s = (cx === 0 && cz === 0 && c < 3 ? 0.7 : 0.42) + ((c * 5 + i * 3) % 7) * 0.2
         dummy.position.set(x, y - s * 0.2, z)
         dummy.rotation.set(0.12 * ((i % 5) - 2), c * 1.17 + i * 0.83, 0.16 * ((i % 4) - 1.5))
         dummy.scale.set(
@@ -184,9 +187,11 @@ export class ChunkWorld {
     const tint = new THREE.Color()
     this.kelpGeos.forEach((geo, kind) => {
       const mat = new THREE.MeshStandardMaterial({
-        color: 0x3d8a6a,
-        roughness: 0.62 + kind * 0.08,
-        metalness: 0.02,
+        color: 0x4aae78,
+        roughness: 0.48 + kind * 0.06,
+        metalness: 0.0,
+        emissive: 0x163a28,
+        emissiveIntensity: 0.28,
         side: THREE.DoubleSide,
       })
       mat.onBeforeCompile = (shader) => {
@@ -217,13 +222,13 @@ export class ChunkWorld {
           const z = pz + ((i * 5 + kind * 2) % 7) * 0.4 - 1.2
           if (x > 70) continue
           const y = groundAt(x, z, 6)
-          const h = (this.quality === 'low' ? 1.35 : 1.7) + (i % 5) * 0.38 + kind * 0.22
+          const h = (this.quality === 'low' ? 1.15 : 1.45) + (i % 5) * 0.28 + kind * 0.18
           dummy.position.set(x, y, z)
           dummy.rotation.y = i * 0.73 + kind * 0.4
           dummy.scale.set(0.85 + (i % 3) * 0.2, h, 1)
           dummy.updateMatrix()
           mesh.setMatrixAt(n, dummy.matrix)
-          const pal = [0x2c7a5c, 0x3a8f68, 0x1f6e66, 0x4a9a5a, 0x2a6f58]
+          const pal = [0x3aa872, 0x4cb878, 0x2e9a8a, 0x58c46a, 0x349878]
           tint.set(pal[(p + i + kind) % pal.length]!).offsetHSL(0, 0, ((i % 5) - 2) * 0.035)
           mesh.setColorAt(n, tint)
           n++
@@ -337,18 +342,41 @@ function rockGeo(seed: number): THREE.BufferGeometry {
 
 function kelpBlade(kind: number): THREE.BufferGeometry {
   const w = kind === 0 ? 0.16 : kind === 1 ? 0.3 : 0.2
-  const geo = new THREE.PlaneGeometry(w, 1, 1, 6)
-  geo.translate(0, 0.5, 0)
-  const pos = geo.attributes.position as THREE.BufferAttribute
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i)
-    const y = pos.getY(i)
-    const wave = Math.sin(y * 6.2 + kind) * 0.045 * y
-    let taper = kind === 1 ? 1 - y * 0.18 : kind === 2 ? 1 - y * 0.52 : 1 - y * 0.28
-    let nx = x * taper + wave
-    if (kind === 2 && y > 0.55) nx += (x >= 0 ? 0.09 : -0.09) * (y - 0.55) * 3
-    pos.setX(i, nx)
+  const ribbon = (yaw: number) => {
+    const geo = new THREE.PlaneGeometry(w, 1, 1, 6)
+    geo.translate(0, 0.5, 0)
+    geo.rotateY(yaw)
+    const pos = geo.attributes.position as THREE.BufferAttribute
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i)
+      const y = pos.getY(i)
+      const z = pos.getZ(i)
+      const wave = Math.sin(y * 6.2 + kind) * 0.045 * y
+      const taper = kind === 1 ? 1 - y * 0.18 : kind === 2 ? 1 - y * 0.52 : 1 - y * 0.28
+      const nx = x * (yaw === 0 ? taper : 1) + (yaw === 0 ? wave : 0)
+      const nz = z * (yaw === 0 ? 1 : taper) + (yaw === 0 ? 0 : wave)
+      let ox = nx
+      if (kind === 2 && y > 0.55 && yaw === 0) ox += (x >= 0 ? 0.09 : -0.09) * (y - 0.55) * 3
+      pos.setXYZ(i, ox, y, nz)
+    }
+    return geo
   }
+  const a = ribbon(0)
+  const b = ribbon(Math.PI / 2)
+  const geo = a
+  const posA = a.getAttribute('position') as THREE.BufferAttribute
+  const posB = b.getAttribute('position') as THREE.BufferAttribute
+  const merged = new Float32Array(posA.array.length + posB.array.length)
+  merged.set(posA.array, 0)
+  merged.set(posB.array, posA.array.length)
+  const idxA = a.getIndex()!.array
+  const idxB = b.getIndex()!.array
+  const index = new Uint16Array(idxA.length + idxB.length)
+  index.set(idxA, 0)
+  for (let i = 0; i < idxB.length; i++) index[idxA.length + i] = idxB[i]! + posA.count
+  geo.setAttribute('position', new THREE.BufferAttribute(merged, 3))
+  geo.setIndex(new THREE.BufferAttribute(index, 1))
+  b.dispose()
   geo.computeVertexNormals()
   return geo
 }

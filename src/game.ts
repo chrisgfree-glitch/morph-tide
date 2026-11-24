@@ -42,6 +42,8 @@ export class Game {
   private bubbles: THREE.InstancedMesh | null = null
   private bubbleBases: { x: number; y: number; z: number; s: number }[] = []
   private shafts: THREE.InstancedMesh | null = null
+  private skyBg: THREE.Texture
+  private underBg = new THREE.Color(0x4ecfd4)
   private nodeGroup = new THREE.Group()
   private hitDebug: THREE.Mesh[] = []
   private sAx = 0
@@ -82,7 +84,7 @@ export class Game {
   private camDist = 6.4
   private firstPerson = false
   private yaw = 0.4
-  private pitch = 0.05
+  private pitch = -0.12
   private yawT = 0.4
   private pitchT = 0.05
   private lookId = -1
@@ -121,7 +123,8 @@ export class Game {
     this.renderer.setPixelRatio(this.pixelCap())
     this.renderer.setClearColor(0x4eb8c4)
     this.scene.fog = new THREE.Fog(0x6ed4d8, 18, 72)
-    this.scene.background = skyTexture()
+    this.skyBg = skyTexture()
+    this.scene.background = this.skyBg
     this.scene.add(new THREE.HemisphereLight(0xffefd2, 0x2d7a7c, 0.95))
     this.sun = new THREE.DirectionalLight(0xffeed0, 1.85)
     this.sun.position.set(12, 18, 10)
@@ -290,7 +293,7 @@ export class Game {
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
       fog: false,
-      uniforms: { uTime: this.waterU, uGain: { value: this.quality === 'low' ? 0.2 : 0.36 } },
+      uniforms: { uTime: this.waterU, uGain: { value: this.quality === 'low' ? 0.32 : 0.48 } },
       vertexShader: `
         varying vec2 vUv;
         void main() {
@@ -865,9 +868,9 @@ export class Game {
     this.evoOpen = false
     this.buildOpen = false
     this.yaw = 0.4
-    this.pitch = 0.05
+    this.pitch = -0.12
     this.yawT = 0.4
-    this.pitchT = 0.05
+    this.pitchT = -0.12
     for (const id of ['settings', 'select', 'quit-ask', 'save-toast', 'evo', 'build', 'hud', 'overlay']) document.getElementById(id)?.setAttribute('hidden', '')
     document.getElementById('title')?.removeAttribute('hidden')
     try {
@@ -1702,17 +1705,19 @@ export class Game {
     const under = this.camera.position.y < WATER && this.camera.position.x < 78
     const zone = you.region
     const fogColor = under
-      ? new THREE.Color(0x4ecfd4)
+      ? new THREE.Color(0x46c8d0)
       : zone === 'volcano'
         ? new THREE.Color(0x8a4030)
         : zone === 'sea'
           ? new THREE.Color(0x7ee0e2)
           : new THREE.Color(0xe2d4b4)
-    fog.color.lerp(fogColor, 0.2)
-    fog.near = under ? (this.quality === 'low' ? 8 : 10) : zone === 'volcano' ? 12 : zone === 'sea' ? 22 : 26
-    fog.far = under ? (this.quality === 'low' ? 34 : 46) : zone === 'volcano' ? 80 : zone === 'sea' ? 110 : 140
-    this.renderer.setClearColor(under ? 0x3eb8c6 : zone === 'volcano' ? 0x6a382c : zone === 'sea' ? 0x6ed4dc : 0xe2d4b4)
-    this.renderer.toneMappingExposure = zone === 'volcano' ? 1.06 : zone === 'sea' ? 1.22 : 1.24
+    fog.color.lerp(fogColor, 0.35)
+    fog.near = under ? (this.quality === 'low' ? 5 : 6) : zone === 'volcano' ? 12 : zone === 'sea' ? 22 : 26
+    fog.far = under ? (this.quality === 'low' ? 22 : 28) : zone === 'volcano' ? 80 : zone === 'sea' ? 110 : 140
+    this.renderer.setClearColor(under ? 0x46c8d0 : zone === 'volcano' ? 0x6a382c : zone === 'sea' ? 0x6ed4dc : 0xe2d4b4)
+    this.renderer.toneMappingExposure = zone === 'volcano' ? 1.06 : under ? 1.18 : zone === 'sea' ? 1.22 : 1.24
+    this.underBg.copy(fog.color)
+    this.scene.background = under ? this.underBg : this.skyBg
     this.adaptResolution(dt)
     this.stepBubbles(dt, sea)
     this.stepShafts()

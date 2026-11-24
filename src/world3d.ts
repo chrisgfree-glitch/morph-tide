@@ -170,18 +170,17 @@ function waterMat(time: { value: number }): THREE.ShaderMaterial {
         vec3 V = normalize(cameraPosition - vWorld);
         vec3 n = normalize(vNormal);
         float fres = pow(1.0 - max(dot(n, V), 0.0), 3.0);
-        vec3 deep = vec3(0.10, 0.48, 0.52);
-        vec3 shallow = vec3(0.28, 0.76, 0.70);
+        vec3 deep = vec3(0.08, 0.52, 0.56);
+        vec3 shallow = vec3(0.22, 0.74, 0.72);
         float shore = smoothstep(20.0, 70.0, vWorld.x);
         vec3 refr = mix(deep, shallow, shore);
-        vec3 sky = vec3(0.62, 0.90, 0.92);
+        vec3 sky = vec3(0.48, 0.88, 0.90);
         float below = step(cameraPosition.y, vWorld.y);
-        vec3 ceilCol = vec3(0.42, 0.86, 0.88);
-        vec3 col = mix(mix(refr, sky, fres * 0.55), mix(refr, ceilCol, 0.42 + fres * 0.28), below);
+        vec3 ceilCol = vec3(0.30, 0.82, 0.84);
+        vec3 col = mix(mix(refr, sky, fres * 0.48), mix(refr, ceilCol, 0.62 + fres * 0.22), below);
         float caust = pow(max(sin(vWorld.x * 0.9 + time) * sin(vWorld.z * 0.7 - time), 0.0), 2.0);
-        col += vec3(0.55, 0.95, 0.88) * caust * (0.10 + below * 0.14);
-        if (uQuality < 0.5) col *= 0.98;
-        float alpha = (below > 0.5 ? 0.52 : 0.34) + fres * 0.22;
+        col += vec3(0.50, 0.95, 0.90) * caust * (0.10 + below * 0.16);
+        float alpha = (below > 0.5 ? 0.78 : 0.42) + fres * 0.16;
         gl_FragColor = vec4(col, alpha);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
