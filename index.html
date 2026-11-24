@@ -32,9 +32,9 @@
       </button>
       <p id="title-msg"></p>
       <div class="help" id="title-help">
-        <p><strong>Keyboard:</strong> You drift forward. WASD steers · Mouse looks (look up to rise, down to dive) · Click attacks the nearest creature ahead · E evolve (when you have enough EP) · M map · Esc pause. Mute is in Pause / Settings.</p>
-        <p><strong>Touch:</strong> You drift forward. Left stick steers · drag the right side to look (up rises, down dives) · Attack locks on and lunges.</p>
-        <p><strong>Controller:</strong> You drift forward. Left stick steers · right stick looks · A attacks the nearest creature ahead · Start map · Select pause / settings</p>
+        <p><strong>Keyboard:</strong> WASD move · mouse drag or right-drag orbits, scroll zooms · click bites · Shift sprint · Space jump · C dive · F dig · B build · Tab lock · E evolve · Esc pause</p>
+        <p><strong>Touch:</strong> Left stick moves · two-finger or right-side drag orbits · Attack bites · Build opens place mode</p>
+        <p><strong>Controller:</strong> LS move · RS orbit · RT bite · LT horn · A jump · B dash · X dig · Y build · L3 sprint · R3 lock · Start pause</p>
       </div>
     </div>
     <div id="rotate">
@@ -58,6 +58,7 @@
       <p id="goal"></p>
       <button id="grow" type="button">Grow</button>
       <p id="banner"></p>
+      <p id="lock-tag" hidden></p>
       <p id="hint" hidden></p>
     </div>
     <div id="evo" class="panel" hidden>
@@ -74,14 +75,23 @@
       <canvas id="map-canvas" width="520" height="240"></canvas>
       <p>The pale band is the first shore. The dot is you. Explored water stays marked.</p>
     </div>
-    <p id="pad-prompt" hidden>Controller connected</p>
+        <p id="pad-prompt" hidden>Controller connected</p>
+    <div id="pad-map" hidden>
+      <span>LS move</span><span>RS orbit</span><span>RT bite</span><span>LT horn</span><span>A jump</span><span>B dash</span><span>X dig</span><span>Y build</span><span>L3 sprint</span><span>R3 lock</span><span>Start pause</span>
+    </div>
+    <div id="build-tray" hidden>
+      <p id="build-status"></p>
+      <div id="build-picks"></div>
+      <p class="build-hint">Q/E rotate · click, A or RT place · X or F pick up (refund) · B or Esc leave</p>
+    </div>
+
     <div id="settings" class="panel" hidden>
       <header><h2>Pause</h2><button id="settings-close" type="button">Close</button></header>
       <p class="path">Guppy → Steelhead (12 EP) → Sturgeon (18 EP). Defeat creatures to earn EP.</p>
       <div class="help guide">
-        <p><strong>Keyboard:</strong> You drift forward. WASD steers · Mouse looks (look up to rise, down to dive) · Click attacks the nearest creature ahead · E evolve (when you have enough EP) · M map · Esc pause. Mute is in this menu.</p>
-        <p><strong>Touch:</strong> You drift forward. Left stick steers · drag the right side to look (up rises, down dives) · Attack locks on and lunges.</p>
-        <p><strong>Controller:</strong> You drift forward. Left stick steers · right stick looks · A attacks the nearest creature ahead · Start map · Select pause / settings</p>
+        <p><strong>Keyboard:</strong> WASD move · mouse drag or right-drag orbits, scroll zooms · click bites · Shift sprint · Space jump · C dive · F dig · B build · Tab lock · E evolve · Esc pause. Mute is in this menu.</p>
+        <p><strong>Touch:</strong> Left stick moves · two-finger or right-side drag orbits · Attack bites · Build opens place mode</p>
+        <p><strong>Controller:</strong> LS move · RS orbit · RT bite · LT horn · A jump · B dash · X dig · Y build · LB/RB or D-pad cycle pieces · L3 sprint · R3 lock · Start pause · Back map</p>
       </div>
       <label>Look sensitivity <input id="set-sens" type="range" min="0.2" max="2" step="0.1" value="0.5" /></label>
       <label class="check"><input id="set-invert" type="checkbox" /> Invert Y</label>

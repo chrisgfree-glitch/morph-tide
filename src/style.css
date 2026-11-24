@@ -182,8 +182,9 @@ input { background: #1a2a30; color: #e7e0d4; border: 2px solid #d7cbb8; padding:
   #title { gap: 3px; padding: 4px 12px 8px; overflow: auto; place-content: start center; align-content: start; }
   .kicker { display: none; }
   .mark svg { width: min(200px, 46vw); }
-  .goal, .path, .help { font-size: 10px; margin: 0 auto; line-height: 1.3; }
-  #title-help p { margin: 0 0 2px; }
+  .goal, .path, .help { font-size: 10px; margin: 0 auto; line-height: 1.25; }
+  #title-help { max-width: 96%; }
+  #title-help p { margin: 0 0 1px; }
   #solo { font-size: 16px; padding: 10px 14px 8px; margin: 4px auto; width: min(320px, 80vw); }
   #solo .solo-sub { font-size: 11px; }
   .swatches button { width: 64px; margin: 2px; padding: 4px; font-size: 10px; }
@@ -208,4 +209,36 @@ input { background: #1a2a30; color: #e7e0d4; border: 2px solid #d7cbb8; padding:
   h1 { font-size: 42px; }
   .swatches button { width: 72px; font-size: 12px; }
   .panel { right: 8px; top: 48px; width: min(360px, 70vw); }
+}
+
+#pad-map {
+  position: fixed; left: 50%; bottom: calc(8px + env(safe-area-inset-bottom));
+  transform: translateX(-50%); z-index: 6;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 10px;
+  max-width: min(720px, 94vw); padding: 6px 10px;
+  background: rgba(16, 32, 40, 0.82); border: 2px solid #d7cbb8; color: #f3eee4;
+  font-size: 11px; pointer-events: none;
+}
+#pad-map[hidden] { display: none !important; }
+#build-tray {
+  position: fixed; left: 50%; bottom: calc(8px + env(safe-area-inset-bottom));
+  transform: translateX(-50%); z-index: 5;
+  width: min(720px, 96vw); padding: 8px 10px;
+  background: rgba(12, 24, 28, 0.9); border: 2px solid #d7cbb8; color: #f3eee4;
+  pointer-events: auto;
+}
+#build-tray[hidden] { display: none !important; }
+#build-status { margin: 0 0 6px; font-size: 13px; color: #ffe6a0; }
+#build-picks { display: flex; flex-wrap: wrap; gap: 6px; }
+#build-picks button { margin: 0; padding: 8px 10px; min-height: 44px; }
+#build-picks button.on { background: #3d6a58; }
+.build-hint { margin: 6px 0 0; font-size: 11px; color: #d4c4a4; }
+#lock-tag {
+  position: fixed; top: calc(52px + env(safe-area-inset-top)); left: 50%;
+  transform: translateX(-50%); z-index: 5; pointer-events: none;
+  color: #ffe6a0; text-shadow: 0 1px 0 #102028; font-size: 13px;
+}
+@media (max-height: 420px) {
+  #pad-map { font-size: 10px; padding: 4px 8px; gap: 4px 8px; }
+  #build-tray { padding: 4px 8px; }
 }
