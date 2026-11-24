@@ -161,3 +161,106 @@ Known issues / leftover for next round:
 - `20b4663` lighting (second caustic, sun glint, light shafts) is still missing.
 - Terrain dig still unlocks at tier 3; the early den is the Lean-to build.
 - Persistence is still local to one browser.
+
+## Round 2: pad, building, camera, combat (2026-11-24, 12:06 PM PT, America/Los_Angeles)
+
+Chris approved this pass on a voice call. Work stayed on `coding-guy/phase1`.
+`npm run check` and `npm run build` passed (including place/refund/persist tests).
+
+Preview of `7dadfd8` is READY (target omitted, not promoted, not protection-gated,
+HTTP 200, `x-robots-tag: noindex`):
+
+- Preview URL: https://evo-back-to-eden-p8klnx6nc-chrisgfree-5870.vercel.app
+- Branch alias: https://evo-back-to-eden-git-coding-guy-phase1-chrisgfree-5870.vercel.app
+- Deployment id: `dpl_6Am74pFZKK1S9apFgsvEZPb1Ke4Z`
+- Commits on `coding-guy/phase1`: `73a8709`, `b3ec012`, `7dadfd8` (`d65f44a..7dadfd8`)
+
+What changed:
+
+- Xbox controller support through the Gamepad API, with button prompts while a
+  pad is connected and menus are closed, and hot-swap with keyboard and touch.
+- Valheim-style free-place building in an in-world tray that does not pause the
+  sim: gather, pick a piece, green/red ghost, rotate, snap, place, pick up or
+  move with a refund. Pieces persist in `evo2.eden.v2`.
+- Camera orbit and zoom from mouse drag / right-drag, scroll, the right stick,
+  and two-finger drag. The terrain probe and tighter bite/dash camera remain.
+- Soft lock-on / aim assist, attack buffering, a wider combo window, sprint,
+  dash with i-frames, a surface breach, and strafe when locked on.
+- The 844×390 title keeps the controller help line on screen (help bottom
+  376.7px in a 390px-tall viewport).
+
+### Controller button map
+
+| Input | Action |
+| --- | --- |
+| Left stick | Move (camera-relative) |
+| Right stick | Orbit camera |
+| RT | Bite (place in build mode) |
+| LT | Horn / charge |
+| A | Jump / surface breach (place in build mode) |
+| B | Dash with i-frames (cancel build mode) |
+| X | Dig, interact, or pick up a piece (refund) |
+| Y | Enter / leave build mode |
+| LB / RB | Rise / dive in play; cycle pieces in build mode |
+| D-pad L / R | Cycle build pieces |
+| D-pad U / D | Rise / dive in play; rotate in build mode |
+| L3 | Sprint |
+| R3 | Soft lock-on |
+| Start | Pause / settings |
+| Back / Select | Map |
+
+Keyboard: WASD move, mouse or right-drag orbits, scroll zooms, click bites,
+Shift sprint, Space jump, C or Ctrl dive, Q dash (or rotate in build), E
+evolve (or rotate in build), F dig / pick up, B build, Tab or middle-click
+lock-on, `[` / `]` cycle pieces, Esc pause (or leave build).
+
+### Live preview smoke
+
+Playwright (Chrome + SwiftShader) against the unique preview URL, at 1280×800
+and 844×390:
+
+- (a) Start, eat, evolve: Solo start, close-up scripted bite of one shallows
+  fish (eats 1/5, +4 EP), Basic lungs bought from the Evolve UI. Passed both
+  sizes. Screenshots: `smoke/preview-desktop-path-a.png`,
+  `smoke/preview-phone-land-path-a.png`. Title shots:
+  `smoke/preview-desktop-title.png`, `smoke/preview-phone-land-title.png`.
+- (b) Gather, build, place, move, refund: a kelp node was present but the
+  scripted F-gather did not add kelp, so 2 kelp were granted. Build mode
+  opened the tray, placed a Lean-to (cost paid, shelter base attached), packed
+  it with a refund, and placed it again. Passed both sizes. Screenshots:
+  `smoke/preview-desktop-path-b.png`, `smoke/preview-phone-land-path-b.png`.
+- (c) Fight with lock-on, dodge, and orbit: lock-on to a Tide fry, Q dash,
+  orbit/zoom. Passed both sizes. Screenshots: `smoke/preview-desktop-path-c.png`,
+  `smoke/preview-phone-land-path-c.png`.
+- Gamepad stub (`navigator.getGamepads`): connection, the “Controller
+  connected” toast, and the bottom button-prompt strip were verified with
+  menus closed. Direct `pollPad` on the stub orbited from the right stick and
+  set RT as bite. Screenshots: `smoke/preview-desktop-pad.png` (Pause still
+  open from Escape-after-Evolve), `smoke/preview-desktop-pad-closed.png`.
+  A physical Xbox pad was not used.
+
+Not verified: play on a physical phone or a physical Xbox controller;
+hot-swap with a real pad in hand; unassisted early-game bites (eat tests
+still place the player on the jaw volume); gathering kelp from a world node
+without granting the bag; a mid-place green ghost screenshot (after placing,
+the next ghost is red when blocked, which is correct); save/reload of pieces
+in a second browser session (unit tests cover snapshot persist); WCAG contrast.
+
+Known issues / leftover:
+
+- Escape while Evolve is open still opens Pause, because Escape does not close
+  the evolve panel first.
+- Unassisted start-of-game bites can still miss.
+- Volcano traps, full 10-tier presentation, vines as a gather type, and
+  server persistence for 100-player worlds are still later work.
+- `20b4663` lighting (second caustic, sun glint, light shafts) is still missing.
+- Terrain dig still unlocks at tier 3; the early den is the Lean-to.
+- Persistence is still local to one browser.
+
+### Crosswalk review
+
+A review request was posted to Claude on the shared `chrisgfree-agents`
+crosswalk as Coding Guy (Grok Bot), post `d1988v`, with the preview URL,
+branch, commit range, and a summary. No reply arrived after waiting about two
+minutes. Claude's seat on that crosswalk only answers while Chris has Claude
+open, and it has no check-in routine, so feedback may land later.
