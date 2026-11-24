@@ -264,3 +264,56 @@ crosswalk as Coding Guy (Grok Bot), post `d1988v`, with the preview URL,
 branch, commit range, and a summary. No reply arrived after waiting about two
 minutes. Claude's seat on that crosswalk only answers while Chris has Claude
 open, and it has no check-in routine, so feedback may land later.
+
+## Round 3: Select, Pause, Save/Load, Quit, and production (2026-11-24, 2:54 PM PT, America/Los_Angeles)
+
+Chris approved this pass, including the production push, in chat at 2:36 PM PT.
+`npm run check` and `npm run build` passed, including a save/load round-trip unit test.
+
+### Preview (tested before promote)
+
+- Preview URL: https://evo-back-to-eden-3wj0vskbt-chrisgfree-5870.vercel.app
+- Branch alias: https://evo-back-to-eden-git-coding-guy-phase1-chrisgfree-5870.vercel.app
+- Deployment id: `dpl_DC5qcMjaE1YWgnjVsyoEHcUghfEx`
+- Commit: `97dd1ed` (`97dd1ed2f7b92ae8e056254be7cbb3428279e6a3`) on `coding-guy/phase1`
+
+### Production
+
+`request_promote` on the tested preview returned HTTP 422 (unprocessable_entity). A new production deployment was created with `target: "production"` of the main merge, which has the same tree as `97dd1ed`. Ready at 2:54 PM PT. Env vars, protection, domains, and secrets were not changed.
+
+- Production URL: https://evo-back-to-eden.vercel.app/
+- Also: https://evo-back-to-eden-chrisgfree-5870.vercel.app
+- Deployment id: `dpl_6ZSau8wE1jThwL3znCLEZXd738h7`
+- Commit on `main`: `cbc796c` (`cbc796cd03f49a7aa5c3df2e75c2c115ab52ab8e`), a merge of `coding-guy/phase1` (`97dd1ed`) into `main`. The histories had no common ancestor; the merge keeps the Phase 1 3D tree. Asset `index-fz8nm3WI.js` matches the tested preview.
+
+### What changed
+
+- Escape, Start/Menu, and the HUD menu button open a small Select screen with Pause, Select, and Quit.
+- Select opens Evolve. Escape (and B on a pad) closes Evolve, Pause, or the Quit prompt first, so Escape over Evolve no longer opens Pause.
+- Pause has Resume, Save, and Load. Save writes the full `evo2.eden.v2` slot (now including position, health, eats, and the inland gate) and shows a “Saved” toast. Load restores it. Resume returns to play.
+- Quit asks “Save before quitting?” with Save & Quit, Quit, and Cancel, then returns to the title screen. A leftover toast is cleared.
+- Menus navigate with D-pad/stick + A/B, keyboard arrows + Enter, and 44px buttons.
+
+### Preview and production smoke
+
+Playwright (Chrome + SwiftShader) at 1280×800 and 844×390, first against the preview, then against https://evo-back-to-eden.vercel.app/ :
+
+- Esc opens Select; Select opens Evolve; Esc closes Evolve back to Select (not Pause). Passed both sizes.
+- Pause, Save (toast “Saved”), move/change EP and eats, Load restores the saved pose and counts (toast “Loaded”). Passed both sizes.
+- Reload the page, Begin, then Load restores a manual save at x=33.5, 14 EP, 3 eats. After Begin the body can drift a few centimeters before Load snaps it back. Passed both sizes.
+- Quit returns to the title (`playing` false, title visible). Passed both sizes.
+- Paths (a) eat/evolve, (b) build/place/refund, (c) lock-on/dash/orbit: passed both sizes.
+- Visible menu buttons are 44px tall on both sizes.
+
+Preview screenshots: `smoke/r3-desktop-*.png`, `smoke/r3-phone-land-*.png`.
+Production screenshots: `smoke/r3-prod-desktop-*.png`, `smoke/r3-prod-phone-land-*.png`.
+
+Not verified: play on a physical phone or Xbox pad; unassisted early-game bites; WCAG contrast; a second-browser-profile save (unit tests and in-page reload cover the slot).
+
+Known issues / leftover:
+
+- After Begin, auto-swim can move the body a little before the player opens Load; Load still restores the saved pose exactly.
+- Unassisted start-of-game bites can still miss.
+- Volcano traps, full 10-tier presentation, vines as a gather type, `20b4663` lighting, and server persistence for 100-player worlds are still later work.
+- Terrain dig still unlocks at tier 3; the early den is the Lean-to.
+- Persistence is still local to one browser.
