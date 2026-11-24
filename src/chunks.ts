@@ -95,10 +95,15 @@ export class ChunkWorld {
   }
 
   private rocks: THREE.InstancedMesh[] = []
+  private kelp: THREE.InstancedMesh[] = []
   private sway = { value: 0 }
 
   tick(time: number): void {
     this.sway.value = time
+  }
+
+  replant(): void {
+    this.plant(this.px, this.pz)
   }
 
   private plant(cx: number, cz: number): void {
@@ -106,42 +111,134 @@ export class ChunkWorld {
     this.plants?.removeFromParent()
     for (const rock of this.rocks) rock.removeFromParent()
     this.rocks = []
+    for (const blade of this.kelp) blade.removeFromParent()
+    this.kelp = []
     this.scatterRocks(cx, cz)
+    this.scatterKelp(cx, cz)
     this.scatterGrass(cx, cz)
   }
 
   private rockMat = rockMaterial()
-  private rockGeos = [0, 1, 2].map((seed) => rockGeo(seed))
+  private rockGeos = [0, 1, 2, 3, 4].map((seed) => rockGeo(seed))
+  private kelpGeos = [0, 1, 2].map((kind) => kelpBlade(kind))
 
   private scatterRocks(cx: number, cz: number): void {
     const mat = this.rockMat
     const geos = this.rockGeos
-    const each = this.quality === 'high' ? 10 : this.quality === 'mid' ? 6 : 4
+    const clusters = this.quality === 'high' ? 7 : this.quality === 'mid' ? 5 : 3
+    const per = this.quality === 'high' ? 5 : this.quality === 'mid' ? 4 : 3
+    const cap = clusters * per
     const dummy = new THREE.Object3D()
-    const algae = new THREE.Color()
-    geos.forEach((geo, seed) => {
-      const mesh = new THREE.InstancedMesh(geo, mat, each)
-      let n = 0
-      for (let i = 0; i < each; i++) {
-        const x = cx * CHUNK + ((i * 19 + seed * 7) % CHUNK) - CHUNK * 0.2
-        const z = cz * CHUNK + ((i * 13 + seed * 11) % CHUNK) - CHUNK * 0.3
+    const moss = new THREE.Color()
+    const buckets: { mesh: THREE.InstancedMesh; n: number }[] = geos.map((geo) => ({
+      mesh: new THREE.InstancedMesh(geo, mat, cap),
+      n: 0,
+    }))
+    for (let c = 0; c < clusters; c++) {
+      const px = cx * CHUNK + ((c * 29 + 8) % CHUNK) - CHUNK * 0.15
+      const pz = cz * CHUNK + ((c * 17 + 5) % CHUNK) - CHUNK * 0.2
+      const members = 2 + ((c + (px < 72 ? 2 : 0)) % (per - 1))
+      for (let i = 0; i < members; i++) {
+        const seed = (c * 3 + i) % geos.length
+        const bucket = buckets[seed]!
+        const x = px + ((i * 1.15 + c * 0.4) % 3.2) - 1.4
+        const z = pz + ((i * 0.9 + c * 0.55) % 2.6) - 1.1
         const y = groundAt(x, z, 6)
-        const s = 0.45 + ((i * 3 + seed) % 5) * 0.22
-        dummy.position.set(x, y - s * 0.22, z)
-        dummy.rotation.set(0.05 * seed, i * 1.7, 0.08 * (i % 3))
-        dummy.scale.set(s * (0.8 + (i % 3) * 0.15), s * (0.45 + (seed % 2) * 0.15), s * (0.7 + (i % 2) * 0.2))
+        const s = 0.38 + ((c * 5 + i * 3) % 7) * 0.16
+        dummy.position.set(x, y - s * 0.2, z)
+        dummy.rotation.set(0.12 * ((i % 5) - 2), c * 1.17 + i * 0.83, 0.16 * ((i % 4) - 1.5))
+        dummy.scale.set(
+          s * (0.7 + (i % 4) * 0.14),
+          s * (0.38 + (seed % 3) * 0.18 + (i % 2) * 0.08),
+          s * (0.62 + (i % 3) * 0.16),
+        )
         dummy.updateMatrix()
-        mesh.setMatrixAt(n, dummy.matrix)
-        const wet = x < 72 ? 0.35 : 0.05
-        algae.setRGB(0.45 - wet * 0.1, 0.48 + wet * 0.15, 0.4)
-        mesh.setColorAt(n, algae)
-        n++
+        bucket.mesh.setMatrixAt(bucket.n, dummy.matrix)
+        const wet = x < 72 ? 1 : 0
+        const tone = (c * 7 + i * 13) % 5
+        if (tone === 0) moss.setRGB(0.32 + wet * 0.04, 0.48 + wet * 0.12, 0.3)
+        else if (tone === 1) moss.setRGB(0.4, 0.52 + wet * 0.1, 0.34)
+        else if (tone === 2) moss.setRGB(0.48, 0.44, 0.36)
+        else if (tone === 3) moss.setRGB(0.3 + wet * 0.05, 0.42, 0.38)
+        else moss.setRGB(0.5, 0.46, 0.4)
+        moss.offsetHSL(0, 0, ((i % 5) - 2) * 0.03)
+        bucket.mesh.setColorAt(bucket.n, moss)
+        bucket.n++
+      }
+    }
+    for (const bucket of buckets) {
+      if (!bucket.n) continue
+      bucket.mesh.count = bucket.n
+      bucket.mesh.instanceMatrix.needsUpdate = true
+      if (bucket.mesh.instanceColor) bucket.mesh.instanceColor.needsUpdate = true
+      bucket.mesh.frustumCulled = true
+      this.group.add(bucket.mesh)
+      this.rocks.push(bucket.mesh)
+    }
+  }
+
+  private scatterKelp(cx: number, cz: number): void {
+    const patches = this.quality === 'high' ? 8 : this.quality === 'mid' ? 5 : 3
+    const per = this.quality === 'high' ? 7 : this.quality === 'mid' ? 5 : 4
+    const dummy = new THREE.Object3D()
+    const tint = new THREE.Color()
+    this.kelpGeos.forEach((geo, kind) => {
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x3d8a6a,
+        roughness: 0.62 + kind * 0.08,
+        metalness: 0.02,
+        side: THREE.DoubleSide,
+      })
+      mat.onBeforeCompile = (shader) => {
+        shader.uniforms.uTime = this.sway
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\nuniform float uTime;')
+          .replace(
+            '#include <begin_vertex>',
+            `float swayH = position.y;
+             vec3 transformed = vec3(position);
+             float id = float(gl_InstanceID);
+             float wave = sin(uTime * 0.85 + id * 0.47 + transformed.x * 0.8);
+             float roll = cos(uTime * 0.62 + id * 0.33);
+             transformed.x += wave * swayH * swayH * (0.7 + float(${kind}) * 0.12);
+             transformed.z += roll * swayH * swayH * 0.4;
+            `,
+          )
+      }
+      const mesh = new THREE.InstancedMesh(geo, mat, patches * per)
+      let n = 0
+      for (let p = 0; p < patches; p++) {
+        const px = cx * CHUNK + ((p * 21 + kind * 9) % (CHUNK * 2)) - CHUNK * 0.35
+        const pz = cz * CHUNK + ((p * 13 + kind * 6) % (CHUNK * 2)) - CHUNK * 0.4
+        if (px > 70) continue
+        for (let i = 0; i < per; i++) {
+          if ((i + kind) % 3 !== kind % 3 && this.quality === 'low' && i > 1) continue
+          const x = px + ((i * 7 + kind * 3) % 9) * 0.45 - 1.8
+          const z = pz + ((i * 5 + kind * 2) % 7) * 0.4 - 1.2
+          if (x > 70) continue
+          const y = groundAt(x, z, 6)
+          const h = (this.quality === 'low' ? 1.35 : 1.7) + (i % 5) * 0.38 + kind * 0.22
+          dummy.position.set(x, y, z)
+          dummy.rotation.y = i * 0.73 + kind * 0.4
+          dummy.scale.set(0.85 + (i % 3) * 0.2, h, 1)
+          dummy.updateMatrix()
+          mesh.setMatrixAt(n, dummy.matrix)
+          const pal = [0x2c7a5c, 0x3a8f68, 0x1f6e66, 0x4a9a5a, 0x2a6f58]
+          tint.set(pal[(p + i + kind) % pal.length]!).offsetHSL(0, 0, ((i % 5) - 2) * 0.035)
+          mesh.setColorAt(n, tint)
+          n++
+        }
+      }
+      if (!n) {
+        mat.dispose()
+        return
       }
       mesh.count = n
       mesh.instanceMatrix.needsUpdate = true
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+      mesh.frustumCulled = true
       this.group.add(mesh)
-      this.rocks.push(mesh)
+      this.kelp.push(mesh)
     })
   }
 
@@ -173,17 +270,18 @@ export class ChunkWorld {
       const px = cx * CHUNK + ((p * 23) % (CHUNK * 2)) - CHUNK * 0.4
       const pz = cz * CHUNK + ((p * 17) % (CHUNK * 2)) - CHUNK * 0.5
       const sea = px < 74
+      if (sea) continue
       for (let i = 0; i < per; i++) {
         const x = px + ((i * 5) % 7) - 3
         const z = pz + ((i * 3) % 5) - 2
         const y = groundAt(x, z, 6)
-        const h = (sea ? 0.9 : 0.45) + (i % 4) * 0.18
+        const h = 0.45 + (i % 4) * 0.18
         dummy.position.set(x, y, z)
         dummy.rotation.y = i * 0.9
         dummy.scale.set(0.7 + (i % 3) * 0.15, h, 1)
         dummy.updateMatrix()
         mesh.setMatrixAt(n, dummy.matrix)
-        tint.set(sea ? 0x4f7a48 : 0x6a8a46).offsetHSL(0, 0, ((i % 5) - 2) * 0.03)
+        tint.set(0x6a8a46).offsetHSL(0, 0, ((i % 5) - 2) * 0.03)
         mesh.setColorAt(n, tint)
         n++
       }
@@ -197,7 +295,7 @@ export class ChunkWorld {
 }
 
 function rockMaterial(): THREE.MeshStandardMaterial {
-  const mat = new THREE.MeshStandardMaterial({ color: 0x8d877c, roughness: 0.9, metalness: 0.03 })
+  const mat = new THREE.MeshStandardMaterial({ color: 0x7d8a72, roughness: 0.86, metalness: 0.02 })
   const loader = new THREE.TextureLoader()
   ;(['rock_color', 'rock_normal', 'rock_rough'] as const).forEach((name, i) => {
     loader.load(`/textures/${name}.webp`, (tex) => {
@@ -215,17 +313,41 @@ function rockMaterial(): THREE.MeshStandardMaterial {
 }
 
 function rockGeo(seed: number): THREE.BufferGeometry {
-  const geo = new THREE.IcosahedronGeometry(1, 1)
+  const geo = new THREE.IcosahedronGeometry(1, seed % 2 === 0 ? 1 : 2)
   const pos = geo.attributes.position as THREE.BufferAttribute
+  const squat = seed === 2 || seed === 4
+  const tall = seed === 1
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i)
     const y = pos.getY(i)
     const z = pos.getZ(i)
     const n = hash(x * 3.1 + seed, y * 2.7, z * 3.4)
-    const r = 0.82 + n * 0.55
+    const k = hash(z * 2.2, x * 4.1 + seed, y * 1.7)
+    const r = 0.72 + n * 0.62 + k * 0.12
     let ny = y * r
     if (ny < -0.12) ny = -0.12
-    pos.setXYZ(i, x * r * (0.9 + seed * 0.08), ny * (0.62 + seed * 0.06), z * r * (0.85 + (seed % 2) * 0.1))
+    const sx = squat ? 1.05 : 0.86 + seed * 0.05
+    const sy = tall ? 0.86 : squat ? 0.42 : 0.56 + (seed % 3) * 0.08
+    const sz = 0.78 + (seed % 3) * 0.08 + k * 0.1
+    pos.setXYZ(i, x * r * sx, ny * sy, z * r * sz)
+  }
+  geo.computeVertexNormals()
+  return geo
+}
+
+function kelpBlade(kind: number): THREE.BufferGeometry {
+  const w = kind === 0 ? 0.16 : kind === 1 ? 0.3 : 0.2
+  const geo = new THREE.PlaneGeometry(w, 1, 1, 6)
+  geo.translate(0, 0.5, 0)
+  const pos = geo.attributes.position as THREE.BufferAttribute
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i)
+    const y = pos.getY(i)
+    const wave = Math.sin(y * 6.2 + kind) * 0.045 * y
+    let taper = kind === 1 ? 1 - y * 0.18 : kind === 2 ? 1 - y * 0.52 : 1 - y * 0.28
+    let nx = x * taper + wave
+    if (kind === 2 && y > 0.55) nx += (x >= 0 ? 0.09 : -0.09) * (y - 0.55) * 3
+    pos.setX(i, nx)
   }
   geo.computeVertexNormals()
   return geo

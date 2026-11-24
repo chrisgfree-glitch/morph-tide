@@ -41,6 +41,7 @@ export class Game {
   private waterU = { value: 0 }
   private bubbles: THREE.InstancedMesh | null = null
   private bubbleBases: { x: number; y: number; z: number; s: number }[] = []
+  private shafts: THREE.InstancedMesh | null = null
   private nodeGroup = new THREE.Group()
   private hitDebug: THREE.Mesh[] = []
   private sAx = 0
@@ -118,11 +119,11 @@ export class Game {
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     this.renderer.setPixelRatio(this.pixelCap())
-    this.renderer.setClearColor(0x1c3a42)
-    this.scene.fog = new THREE.Fog(0x7f9698, 16, 46)
+    this.renderer.setClearColor(0x4eb8c4)
+    this.scene.fog = new THREE.Fog(0x6ed4d8, 18, 72)
     this.scene.background = skyTexture()
-    this.scene.add(new THREE.HemisphereLight(0xffe2c4, 0x3a5560, 0.85))
-    this.sun = new THREE.DirectionalLight(0xffe4bc, 1.7)
+    this.scene.add(new THREE.HemisphereLight(0xffefd2, 0x2d7a7c, 0.95))
+    this.sun = new THREE.DirectionalLight(0xffeed0, 1.85)
     this.sun.position.set(12, 18, 10)
     this.sun.castShadow = true
     this.sun.shadow.mapSize.set(1024, 1024)
@@ -134,7 +135,7 @@ export class Game {
     this.sun.shadow.camera.bottom = -12
     this.scene.add(this.sun)
     this.scene.add(this.sun.target)
-    const cool = new THREE.DirectionalLight(0x8eb4c4, 0.38)
+    const cool = new THREE.DirectionalLight(0x7ed4d8, 0.46)
     cool.position.set(-8, 4, -6)
     this.scene.add(cool)
     this.scene.add(this.decor)
@@ -211,7 +212,9 @@ export class Game {
     this.camera.fov = wide ? 68 : 58
     this.camera.aspect = aspect
     this.camera.updateProjectionMatrix()
-    this.camDist = this.firstPerson ? 0.45 : wide ? 6.2 : 8
+    const you = playerOf(this.world)
+    const guppy = you.load.size <= 0.5 && you.spent <= 0
+    this.camDist = this.firstPerson ? 0.45 : (wide ? 6.2 : 8) * (guppy ? 0.78 : 1)
     const fog = this.scene.fog as THREE.Fog
     fog.near = wide ? 24 : 14
     fog.far = wide ? 70 : 42
@@ -230,6 +233,7 @@ export class Game {
     this.chunks.update(8, 0)
     this.waterMesh = buildWater(this.waterU)
     g.add(this.waterMesh)
+    this.spawnShafts(g)
     void loadPbr(this.quality === 'low' ? 'low' : 'high', this.chunks, this.waterMesh).catch(() => {
       /* vertex-colored chunks remain if a texture is missing */
     })
@@ -267,7 +271,81 @@ export class Game {
     this.bubbles = mesh
   }
 
+  private spawnShafts(g: THREE.Group): void {
+    if (this.shafts) {
+      this.shafts.removeFromParent()
+      this.shafts.geometry.dispose()
+      const mat = this.shafts.material
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose())
+      else mat.dispose()
+      this.shafts = null
+    }
+    const n = this.quality === 'high' ? 8 : this.quality === 'mid' ? 5 : 2
+    const geo = new THREE.PlaneGeometry(1.8, 16)
+    geo.translate(0, -8, 0)
+    const mat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      depthTest: true,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      fog: false,
+      uniforms: { uTime: this.waterU, uGain: { value: this.quality === 'low' ? 0.2 : 0.36 } },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec2 vUv;
+        uniform float uTime;
+        uniform float uGain;
+        void main() {
+          float shaft = smoothstep(0.0, 0.18, vUv.x) * smoothstep(1.0, 0.82, vUv.x);
+          shaft *= pow(vUv.y, 0.55);
+          float flicker = 0.78 + 0.22 * sin(uTime * 0.65 + vUv.y * 2.4);
+          vec3 col = vec3(0.78, 0.98, 0.94);
+          gl_FragColor = vec4(col, shaft * flicker * uGain);
+        }
+      `,
+    })
+    const mesh = new THREE.InstancedMesh(geo, mat, n)
+    mesh.frustumCulled = false
+    mesh.renderOrder = 3
+    const dummy = new THREE.Object3D()
+    for (let i = 0; i < n; i++) {
+      dummy.position.set(4 + i * 4.8, WATER + 0.2, ((i * 5) % 9) - 4)
+      dummy.rotation.set(0, i * 0.55, 0.04)
+      dummy.scale.set(0.65 + (i % 3) * 0.22, 0.85 + (i % 2) * 0.2, 1)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(i, dummy.matrix)
+    }
+    mesh.instanceMatrix.needsUpdate = true
+    g.add(mesh)
+    this.shafts = mesh
+  }
+
+  private stepShafts(): void {
+    if (!this.shafts) return
+    const dummy = new THREE.Object3D()
+    const cam = this.camera.position
+    const n = this.shafts.count
+    for (let i = 0; i < n; i++) {
+      const x = 4 + i * 4.8
+      const z = ((i * 5) % 9) - 4
+      dummy.position.set(x, WATER + 0.2, z)
+      dummy.rotation.set(0, Math.atan2(cam.x - x, cam.z - z), 0.03)
+      dummy.scale.set(0.65 + (i % 3) * 0.22, 0.85 + (i % 2) * 0.2, 1)
+      dummy.updateMatrix()
+      this.shafts.setMatrixAt(i, dummy.matrix)
+    }
+    this.shafts.instanceMatrix.needsUpdate = true
+  }
+
   private applyQuality(): void {
+
     this.renderer.setPixelRatio(this.pixelCap())
     const shadows = this.quality !== 'low'
     this.renderer.shadowMap.enabled = shadows
@@ -277,7 +355,9 @@ export class Game {
     if (this.chunks) {
       this.chunks.quality = this.quality
       setTerrainQuality(this.chunks, this.waterMesh, this.quality === 'low' ? 'low' : 'high')
+      this.chunks.replant()
     }
+    if (this.waterMesh) this.spawnShafts(this.decor)
     this.resize()
     const pick = document.getElementById('set-quality') as HTMLSelectElement | null
     if (pick && pick.value !== this.qualityMode) pick.value = this.qualityMode
@@ -807,8 +887,8 @@ export class Game {
     if (hint && !localStorage.getItem('evo2.hinted')) {
       hint.hidden = false
       hint.textContent = touch
-        ? 'Eat 5 fish to start. The left stick steers. Drag the right side to look. Attack locks on and lunges. When a predator flashes, swim aside.'
-        : 'Eat 5 fish to start. Mouse looks, click bites, WASD steers. E evolves. When a predator flashes, dart aside.'
+        ? 'You are a tiny guppy. Eat the fry around you (5 to start). The left stick steers. Drag the right side to look. Attack locks on and lunges.'
+        : 'You are a tiny guppy. Eat the fry around you (5 to start). Mouse looks, click bites, WASD steers. E evolves.'
       this.hintLeft = 8
       localStorage.setItem('evo2.hinted', '1')
     }
@@ -1622,19 +1702,20 @@ export class Game {
     const under = this.camera.position.y < WATER && this.camera.position.x < 78
     const zone = you.region
     const fogColor = under
-      ? new THREE.Color(0x0a5460)
+      ? new THREE.Color(0x4ecfd4)
       : zone === 'volcano'
         ? new THREE.Color(0x8a4030)
         : zone === 'sea'
-          ? new THREE.Color(0x6aa8b0)
-          : new THREE.Color(0xd2c4a4)
+          ? new THREE.Color(0x7ee0e2)
+          : new THREE.Color(0xe2d4b4)
     fog.color.lerp(fogColor, 0.2)
-    fog.near = under ? 2 : zone === 'volcano' ? 10 : zone === 'sea' ? 16 : 20
-    fog.far = under ? 26 : zone === 'volcano' ? 70 : zone === 'sea' ? 90 : 120
-    this.renderer.setClearColor(under ? 0x083e48 : zone === 'volcano' ? 0x6a382c : zone === 'sea' ? 0x7eb4b8 : 0xd2c4a4)
-    this.renderer.toneMappingExposure = zone === 'volcano' ? 1.06 : zone === 'sea' ? 1.16 : 1.2
+    fog.near = under ? (this.quality === 'low' ? 8 : 10) : zone === 'volcano' ? 12 : zone === 'sea' ? 22 : 26
+    fog.far = under ? (this.quality === 'low' ? 34 : 46) : zone === 'volcano' ? 80 : zone === 'sea' ? 110 : 140
+    this.renderer.setClearColor(under ? 0x3eb8c6 : zone === 'volcano' ? 0x6a382c : zone === 'sea' ? 0x6ed4dc : 0xe2d4b4)
+    this.renderer.toneMappingExposure = zone === 'volcano' ? 1.06 : zone === 'sea' ? 1.22 : 1.24
     this.adaptResolution(dt)
     this.stepBubbles(dt, sea)
+    this.stepShafts()
     this.syncNodes()
     this.syncPieces()
     this.updateGhost()
