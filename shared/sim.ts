@@ -262,7 +262,8 @@ export function createWorld(): World {
       load.jaw = 'shark'
       load.armor = 2
     }
-    w.ents.push(make({ id: w.nextId++, kind: 'npc', name, species, x, y, region, bias, spent, load }))
+    const fragile = region === 'sea' && bias <= 0
+    w.ents.push(make({ id: w.nextId++, kind: 'npc', name, species, x, y, region, bias, spent, load, maxHp: fragile ? 6 : undefined, hp: fragile ? 6 : undefined }))
   }
   const hunter = w.ents.find((e) => e.species === 'hunter')
   w.bases.push({
