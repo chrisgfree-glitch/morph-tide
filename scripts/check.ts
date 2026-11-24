@@ -1,10 +1,10 @@
 import { starterLoad } from '../shared/catalog'
 import { columnSeconds } from '../shared/dig'
-import { attackVolumes, volumeHits } from '../shared/body'
+import { attackVolumes, bodyScale, volumeHits } from '../shared/body'
 import { applyWorldSnapshot, createWorld, playerOf, snapshotWorld, step } from '../shared/sim'
 import { applyGameSave, encodeGameSave, parseGameSave, serializeGameSave } from '../shared/save'
 import { canPlace, placePiece, refundPiece } from '../shared/build'
-import { bodyBreakPower, cellSeconds, chopSeconds, tierOf } from '../shared/rules'
+import { bodyBreakPower, cellSeconds, chopSeconds, compute, tierOf } from '../shared/rules'
 
 function t7() {
   const load = starterLoad()
@@ -181,3 +181,46 @@ restored.eats = 0
 applyGameSave(restored, parseGameSave(raw)!)
 if (Math.abs(playerOf(restored).x - 42.5) > 0.001 || playerOf(restored).ep !== 18 || restored.eats !== 4) throw new Error('second load should overwrite later changes')
 console.log('save/load round-trip')
+
+const fresh = createWorld()
+const pup = playerOf(fresh)
+if (pup.load.size > 0.5) throw new Error('new game should start as a small guppy')
+if (pup.spent !== 0 || pup.ep !== 0) throw new Error('new guppy should have no EP or spent')
+if ((pup.bag.kelp ?? 0) !== 0 || (pup.bag.sticks ?? 0) !== 0 || (pup.bag.stone ?? 0) !== 0 || (pup.bag.hide ?? 0) !== 0) {
+  throw new Error('new guppy should have an empty bag')
+}
+if (pup.load.lungs !== 0 || pup.load.legs !== 0 || pup.load.armor !== 0) throw new Error('new guppy should have no grown parts')
+const pupBite = compute(pup.load, pup.spent).bite
+if (pupBite > 2) throw new Error(`guppy bite should be weak, got ${pupBite}`)
+const pupScale = bodyScale(pup.load, pup.spent)
+const oldStarter = starterLoad()
+oldStarter.size = 0.92
+const oldScale = bodyScale(oldStarter, 0)
+if (oldScale <= pupScale * 1.4) throw new Error(`guppy should be visibly smaller than the old starter (${pupScale} vs ${oldScale})`)
+if (oldScale < 0.65 || oldScale > 0.75) throw new Error(`old starter scale should stay ~0.70, got ${oldScale}`)
+const fry = fresh.ents.filter((e) => e.kind === 'npc' && e.region === 'sea' && e.bias <= 0 && Math.abs(e.x - pup.x) <= 12)
+if (fry.length < 8) throw new Error(`need plenty of nearby fry, got ${fry.length}`)
+if (!fresh.banner.toLowerCase().includes('guppy')) throw new Error('banner should name the guppy start')
+
+const mid = createWorld()
+const midYou = playerOf(mid)
+midYou.load.size = 0.92
+midYou.load.lungs = 1
+midYou.spent = 12
+midYou.ep = 18
+midYou.bag.stone = 2
+const midRaw = serializeGameSave(encodeGameSave(mid))
+const intoGuppy = createWorld()
+if (playerOf(intoGuppy).load.size > 0.5) {
+  /* start from a guppy world, then load the mid save */
+}
+applyGameSave(intoGuppy, parseGameSave(midRaw)!)
+const loaded = playerOf(intoGuppy)
+if (loaded.load.size !== 0.92 || loaded.spent !== 12 || loaded.ep !== 18 || loaded.load.lungs !== 1 || (loaded.bag.stone ?? 0) !== 2) {
+  throw new Error('existing save must load unchanged')
+}
+if (compute(loaded.load, loaded.spent).bite <= 2) throw new Error('loaded mid-game bite should not stay guppy-weak')
+if (Math.abs(bodyScale(loaded.load, loaded.spent) - bodyScale(oldStarter, 12)) > 0.001) {
+  throw new Error('loaded body scale should match the pre-guppy size')
+}
+console.log('guppy start and save compatibility')

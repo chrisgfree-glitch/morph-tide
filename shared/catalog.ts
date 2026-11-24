@@ -93,7 +93,7 @@ export function starterLoad(): Loadout {
     cutter: '',
     color: 0,
     accent: 0,
-    size: 0.92,
+    size: 0.42,
     spec: '',
     camo: 0,
     lure: 0,

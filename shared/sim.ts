@@ -228,7 +228,7 @@ export function createWorld(): World {
     pvp: true,
     won: false,
     over: false,
-    banner: 'Shallows. Eat, then spend EP. Lungs open the shore.',
+    banner: 'A tiny guppy in the shallows. Eat the fry around you, then grow.',
     bannerT: 5,
     shake: 0,
     hitStop: 0,
@@ -242,9 +242,16 @@ export function createWorld(): World {
   }
   w.ents.push(make({ id: w.nextId++, kind: 'player', name: 'Tidewisp', species: 'you', x: 8, y: 2.4 }))
   const seeds: [string, string, number, number, Ent['region'], number][] = [
-    ['Glass minnow', 'shrimp', 12, 3.0, 'sea', 0],
-    ['Tide fry', 'shrimp', 15, 2.6, 'sea', 0],
-    ['Brine shrimp', 'shrimp', 18, 3.4, 'sea', 0],
+    ['Speck fry', 'shrimp', 6.4, 2.2, 'sea', 0],
+    ['Pebble fry', 'shrimp', 7.6, 2.7, 'sea', 0],
+    ['Shimmer fry', 'shrimp', 8.8, 3.1, 'sea', 0],
+    ['Dab shrimp', 'shrimp', 9.6, 2.0, 'sea', 0],
+    ['Glass minnow', 'shrimp', 11.2, 2.8, 'sea', 0],
+    ['Riffle fry', 'shrimp', 12.4, 2.3, 'sea', 0],
+    ['Tide fry', 'shrimp', 14.0, 2.6, 'sea', 0],
+    ['Silk fry', 'shrimp', 15.5, 3.0, 'sea', 0],
+    ['Brine shrimp', 'shrimp', 17.2, 3.2, 'sea', 0],
+    ['Silt shrimp', 'shrimp', 19.0, 2.4, 'sea', 0],
     ['Kelp dart', 'needle', 28, 5, 'sea', 2],
     ['Ghost bell', 'bell', 40, 4, 'sea', 6],
     ['Plate bug', 'plate', 52, 2.4, 'sea', 10],
@@ -259,6 +266,7 @@ export function createWorld(): World {
   for (const [name, species, x, y, region, bias] of seeds) {
     const spent = bias > 20 ? 100 : bias > 8 ? 40 : 8
     const load = starterLoad()
+    if (bias > 0) load.size = 0.92
     if (region !== 'sea') {
       load.lungs = 1
       load.legs = 4
@@ -269,7 +277,7 @@ export function createWorld(): World {
       load.armor = 2
     }
     const fragile = region === 'sea' && bias <= 0
-    w.ents.push(make({ id: w.nextId++, kind: 'npc', name, species, x, y, region, bias, spent, load, maxHp: fragile ? 6 : undefined, hp: fragile ? 6 : undefined }))
+    w.ents.push(make({ id: w.nextId++, kind: 'npc', name, species, x, y, region, bias, spent, load, maxHp: fragile ? 5 : undefined, hp: fragile ? 5 : undefined }))
   }
   const hunter = w.ents.find((e) => e.species === 'hunter')
   w.bases.push({

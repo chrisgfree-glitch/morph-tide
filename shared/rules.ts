@@ -209,6 +209,7 @@ export function compute(load: Loadout, spent: number): Stats {
     s.hp += hide.hp
     s.spd += hide.spd
   }
+  if (spent <= 0 && load.size <= 0.5 && load.lungs < 1 && load.legs === 0) s.bite = Math.min(s.bite, 2)
   s.bite = Math.max(1, s.bite)
   s.def = Math.max(0, s.def)
   s.hp = Math.max(16, Math.round(s.hp))

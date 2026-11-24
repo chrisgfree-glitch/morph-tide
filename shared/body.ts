@@ -6,7 +6,7 @@ import { tierOf } from './rules'
 export function bodyScale(load: Loadout, spent: number, boss = false): number {
   const tier = tierOf(spent)
   const old = 0.9 + load.size * 0.4 + Math.min(0.35, spent / 500)
-  const young = load.legs > 0 ? 1 : tier <= 1 ? 0.55 : tier === 2 ? 0.64 : Math.min(1, 0.64 + (tier - 2) * 0.07)
+  const young = load.legs > 0 ? 1 : tier <= 1 ? (load.size <= 0.5 ? 0.36 : 0.55) : tier === 2 ? 0.64 : Math.min(1, 0.64 + (tier - 2) * 0.07)
   return old * young + (boss ? 1.05 : 0)
 }
 
