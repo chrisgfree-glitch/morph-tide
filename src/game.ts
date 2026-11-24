@@ -1,7 +1,8 @@
 import * as THREE from 'three'
-import { ARM_TYPES, BREAKERS, BUILDINGS, COLOR_NAMES, COLORS, CUTTERS, DEFENSES, FEET, FIN_LINE, GEMS, HORNS, JAWS, ROCK_TINT, SKINS, TAIL_LINE, TEETH, TREE_TINT, TIER_SPENT, WING_STYLES, treeById } from '../shared/catalog'
-import { applyWorldSnapshot, buildAt, createWorld, nearestInCone, placeDefense, playerOf, snapshotWorld, step, tryPurchase, type Ent, type Frame, type World } from '../shared/sim'
-import { defenseCap, fishGoal, growFish, hideStock, tierOf } from '../shared/rules'
+import { ARM_TYPES, BREAKERS, COLOR_NAMES, COLORS, CUTTERS, FEET, FIN_LINE, GEMS, HORNS, JAWS, ROCK_TINT, SKINS, TAIL_LINE, TEETH, TREE_TINT, TIER_SPENT, WING_STYLES, treeById } from '../shared/catalog'
+import { applyWorldSnapshot, createWorld, nearestInCone, playerOf, snapshotWorld, step, tryPurchase, type Ent, type Frame, type World } from '../shared/sim'
+import { PIECES, canPlace, costLine, nearestPiece, pieceById, placePiece, refundPiece } from '../shared/build'
+import { fishGoal, growFish, hideStock, tierOf } from '../shared/rules'
 import { audio } from './audio'
 import { attackVolumes, type HitVol } from '../shared/body'
 import { buildCreature, creatureKey, poseCreature } from './mesh'
@@ -58,7 +59,17 @@ export class Game {
   private navLatch = false
   private sliderWait = 0
   private padPromptT = 0
-  private gp = { lx: 0, ly: 0, rx: 0, ry: 0, attack: false, dig: false, rise: false, dive: false }
+  private gp = { lx: 0, ly: 0, rx: 0, ry: 0, attack: false, horn: false, dash: false, dig: false, rise: false, dive: false, sprint: false, use: false }
+  private zoom = 1
+  private lockId = 0
+  private buildMode = false
+  private buildIndex = 0
+  private buildYaw = 0
+  private buildFree = false
+  private orbitId = -1
+  private lookPtrs = new Map<number, { x: number; y: number }>()
+  private pieceGroup = new THREE.Group()
+  private ghost = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x88c070, transparent: true, opacity: 0.45, depthWrite: false }))
   private camPos = new THREE.Vector3(8, 4, 9)
   private lookPos = new THREE.Vector3(10, 2, 0)
   private camGoal = new THREE.Vector3()
@@ -122,6 +133,9 @@ export class Game {
     this.scene.add(cool)
     this.scene.add(this.decor)
     this.scene.add(this.nodeGroup)
+    this.scene.add(this.pieceGroup)
+    this.ghost.visible = false
+    this.scene.add(this.ghost)
     this.debug = new URLSearchParams(location.search).get('debug') === 'hit'
     const dbg = new THREE.BufferGeometry()
     dbg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(400 * 3), 3))
@@ -136,16 +150,28 @@ export class Game {
     window.addEventListener('keydown', (e) => {
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) e.preventDefault()
       this.keys.add(e.key.toLowerCase())
-      if (e.key === 'e' || e.key === 'E') this.toggleEvo()
+      if ((e.key === 'e' || e.key === 'E') && !this.buildMode) this.toggleEvo()
       if (e.key === 'b' || e.key === 'B') this.toggleBuild()
       if (e.key === 'Escape') {
-        if (this.mapOpen) this.toggleMap(false)
+        if (this.buildMode) this.toggleBuild(false)
+        else if (this.mapOpen) this.toggleMap(false)
         else if (this.settingsOpen) this.toggleSettings(false)
         else if (this.playing) this.toggleSettings(true)
       }
       if ((e.key === 'm' || e.key === 'M') && !(e.target instanceof HTMLInputElement)) this.toggleMap()
       if (e.key === 'h' || e.key === 'H') this.debug = !this.debug
       if (e.key === 'v' || e.key === 'V') this.firstPerson = !this.firstPerson
+      if (e.key === 'Tab') {
+        e.preventDefault()
+        this.toggleLock()
+      }
+      if (this.buildMode && (e.key === 'q' || e.key === 'Q' || e.key === 'e' || e.key === 'E' || e.key === 'r' || e.key === 'R')) {
+        this.buildYaw += e.key.toLowerCase() === 'q' ? Math.PI / 2 : -Math.PI / 2
+      } else if ((e.key === 'q' || e.key === 'Q') && this.cd.dash <= 0) {
+        this.cd.dash = 1.15
+        this.dashT = 0.2
+      }
+      if (this.buildMode && (e.key === '[' || e.key === ']')) this.cyclePiece(e.key === ']' ? 1 : -1)
     })
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()))
     this.bindUi()
@@ -313,9 +339,14 @@ export class Game {
       if (document.pointerLockElement !== view) void view.requestPointerLock()
     })
     document.addEventListener('mousemove', (e) => {
-      if (document.pointerLockElement !== view) return
-      this.applyLook(e.movementX, e.movementY, 0.00115)
+      if (document.pointerLockElement !== view && this.orbitId < 0) return
+      if (document.pointerLockElement === view) this.applyLook(e.movementX, e.movementY, 0.00115)
     })
+    view.addEventListener('wheel', (e) => {
+      if (!this.playing) return
+      e.preventDefault()
+      this.zoom = Math.max(0.5, Math.min(1.7, this.zoom * (e.deltaY > 0 ? 1.08 : 0.92)))
+    }, { passive: false })
     const look = document.getElementById('look')
     look?.addEventListener('pointerdown', (e) => {
       if (!this.playing) return
@@ -336,10 +367,32 @@ export class Game {
       this.firstPerson = !this.firstPerson
     })
     view.addEventListener('pointerdown', (e) => {
-      if (e.pointerType === 'mouse' && e.button === 0 && document.pointerLockElement === view) this.mouseBite = true
+      this.lookPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (e.pointerType === 'mouse' && e.button === 1) this.toggleLock()
+      if (e.pointerType === 'mouse' && e.button === 2) {
+        this.orbitId = e.pointerId
+        view.setPointerCapture(e.pointerId)
+      }
+      if (e.pointerType === 'mouse' && e.button === 0 && document.pointerLockElement === view) {
+        if (this.buildMode) this.confirmPlace()
+        else this.mouseBite = true
+      }
     })
-    view.addEventListener('pointerup', () => {
+    view.addEventListener('pointermove', (e) => {
+      const prev = this.lookPtrs.get(e.pointerId)
+      if (prev) {
+        if (e.pointerId === this.orbitId || this.lookPtrs.size >= 2) this.applyLook(e.movementX, e.movementY, this.lookPtrs.size >= 2 ? 0.003 : 0.0024)
+        this.lookPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      }
+    })
+    view.addEventListener('pointerup', (e) => {
+      this.lookPtrs.delete(e.pointerId)
+      if (e.pointerId === this.orbitId) this.orbitId = -1
       this.mouseUp = true
+    })
+    view.addEventListener('pointercancel', (e) => {
+      this.lookPtrs.delete(e.pointerId)
+      if (e.pointerId === this.orbitId) this.orbitId = -1
     })
   }
 
@@ -581,11 +634,105 @@ export class Game {
   }
 
   toggleBuild(force?: boolean): void {
-    this.buildOpen = force ?? !this.buildOpen
-    const el = document.getElementById('build')
-    if (!el) return
-    el.hidden = !this.buildOpen
-    if (this.buildOpen) this.renderBuild()
+    this.buildMode = force ?? !this.buildMode
+    this.buildOpen = false
+    document.getElementById('build')?.setAttribute('hidden', '')
+    const tray = document.getElementById('build-tray')
+    if (tray) tray.hidden = !this.buildMode
+    this.ghost.visible = this.buildMode
+    if (this.buildMode) this.renderBuild()
+  }
+
+  toggleLock(): void {
+    if (this.lockId) {
+      this.lockId = 0
+      return
+    }
+    const you = playerOf(this.world)
+    const aim = nearestInCone(this.world, you)
+    this.lockId = aim?.id ?? 0
+    if (this.lockId) this.world.banner = `Locked · ${aim?.name ?? 'prey'}`
+    this.world.bannerT = this.lockId ? 1.4 : 0
+  }
+
+  private cyclePiece(dir: number): void {
+    this.buildIndex = (this.buildIndex + dir + PIECES.length) % PIECES.length
+    this.renderBuild()
+  }
+
+  private aimPoint(you: Ent): { x: number; y: number; z: number } {
+    const dist = 2.3
+    const x = you.x + Math.cos(you.yaw) * dist
+    const z = you.z + Math.sin(you.yaw) * dist
+    const y = you.y
+    return { x, y, z }
+  }
+
+  private confirmPlace(): void {
+    const you = playerOf(this.world)
+    const def = PIECES[this.buildIndex]
+    if (!def) return
+    const aim = this.aimPoint(you)
+    const result = placePiece(this.world, you, def.id, aim.x, aim.y, aim.z, you.yaw + this.buildYaw, this.buildFree)
+    this.world.banner = result.reason
+    this.world.bannerT = 2
+    if (result.ok) {
+      this.feel('dig')
+      this.buildFree = false
+      if (def.base && result.piece) this.attachShelter(def.name, result.piece.x, you)
+      this.save()
+    } else audio.blip('hurt')
+    this.renderBuild()
+  }
+
+  private pickupPiece(): boolean {
+    const you = playerOf(this.world)
+    const aim = this.aimPoint(you)
+    const near = nearestPiece(this.world, aim.x, you.y, aim.z, 2.8) ?? nearestPiece(this.world, you.x, you.y, you.z, 2.2)
+    if (!near) return false
+    const result = refundPiece(this.world, you, near.id)
+    this.world.banner = result.reason
+    this.world.bannerT = 2
+    if (result.ok) {
+      this.feel('gather')
+      const idx = PIECES.findIndex((p) => p.id === near.kind)
+      if (idx >= 0) this.buildIndex = idx
+      this.buildYaw = near.yaw - you.yaw
+      this.buildFree = true
+      const def = pieceById(near.kind)
+      if (def?.base) {
+        const i = this.world.bases.findIndex((b) => b.owner === you.id && Math.abs(b.x - near.x) < 1.4 && b.name === def.name)
+        if (i >= 0) this.world.bases.splice(i, 1)
+      }
+      if (!this.buildMode) this.toggleBuild(true)
+      this.save()
+    } else audio.blip('hurt')
+    this.renderBuild()
+    return result.ok
+  }
+
+  private attachShelter(name: string, x: number, you: Ent): void {
+    if (this.world.bases.some((b) => b.owner === you.id && Math.abs(b.x - x) < 1.4 && b.name === name)) return
+    this.world.bases.push({
+      id: this.world.nextId++,
+      owner: you.id,
+      name,
+      tier: 1,
+      clan: you.clan,
+      x,
+      biome: you.region,
+      hp: 22,
+      maxHp: 22,
+      mats: {},
+      gems: {},
+      shield: 0,
+      warn: 0,
+      raidUntil: 0,
+      wave: 0,
+      nextAt: 1e9,
+      online: true,
+      defs: [],
+    })
   }
 
   private renderEvo(): void {
@@ -688,23 +835,24 @@ export class Game {
   }
 
   private renderBuild(): void {
-    const root = document.getElementById('build-body')
-    if (!root) return
+    const root = document.getElementById('build-picks')
+    const status = document.getElementById('build-status')
     const you = playerOf(this.world)
-    const bits = [
-      ...BUILDINGS.map((b) => `<button data-build="${b.id}">${b.name} · tier ${b.tier}</button>`),
-      ...DEFENSES.map((d) => `<button data-def="${d.id}">${d.name} · tier ${d.tier} · cap ${defenseCap(tierOf(you.spent))}</button>`),
-    ]
-    root.innerHTML = bits.join('')
+    if (!root) return
+    root.innerHTML = PIECES.map((b, i) => {
+      const have = costLine(b.cost)
+     const on = i === this.buildIndex ? ' on' : ''
+      return `<button data-i="${i}" class="${on.trim()}">${b.name} · ${have}</button>`
+    }).join('')
+    const def = PIECES[this.buildIndex]
+    if (status && def) {
+      const bag = Object.entries(def.cost).map(([m, n]) => `${you.bag[m] ?? 0}/${n} ${m}`).join(' · ')
+      status.textContent = this.buildFree ? `${def.name} · free to place after pickup` : `${def.name} · ${bag}`
+    }
     root.querySelectorAll('button').forEach((btn) =>
       btn.addEventListener('click', () => {
-        const el = btn as HTMLButtonElement
-        const result = el.dataset.build ? buildAt(this.world, el.dataset.build) : placeDefense(this.world, el.dataset.def ?? '')
-        this.world.banner = result.reason
-        this.world.bannerT = 2
-        if (result.ok) this.feel('dig')
-        else audio.blip('hurt')
-        this.save()
+        this.buildIndex = Number((btn as HTMLButtonElement).dataset.i ?? 0)
+        this.renderBuild()
       }),
     )
   }
@@ -742,22 +890,26 @@ export class Game {
   }
 
   private placeCamera(you: Ent, _dt: number): void {
-    const aheadX = Math.cos(you.yaw)
-    const aheadZ = Math.sin(you.yaw)
-    const lookX = aheadX * 0.35 * you.vx + you.x
-    const lookZ = aheadZ * 0.35 * you.vz + you.z
+    const aheadX = Math.cos(this.yaw)
+    const aheadZ = Math.sin(this.yaw)
+    const lock = this.world.ents.find((e) => e.id === this.lockId && e.alive)
+    const lookX = you.x + you.vx * 0.12
+    const lookZ = you.z + you.vz * 0.12
     if (this.firstPerson) {
-      this.camGoal.set(you.x - aheadX * 0.15, you.y + 0.32, you.z - aheadZ * 0.15)
-      this.lookGoal.set(you.x + aheadX * 1.4, you.y + 0.04 + Math.sin(this.pitch) * 1.2, you.z + aheadZ * 1.4)
+      const fx = Math.cos(you.yaw)
+      const fz = Math.sin(you.yaw)
+      this.camGoal.set(you.x - fx * 0.15, you.y + 0.32, you.z - fz * 0.15)
+      this.lookGoal.set(you.x + fx * 1.4, you.y + 0.04 + Math.sin(this.pitch) * 1.2, you.z + fz * 1.4)
       this.camera.near = 0.04
       return
     }
     this.camera.near = 0.1
     const tight = you.biteT > 0 || this.dashT > 0
-    const dist = this.camDist * (tight ? 0.62 : 1)
+    const dist = this.camDist * this.zoom * (tight ? 0.62 : 1)
     const height = tight ? 1.15 : 1.7
     this.camGoal.set(you.x - aheadX * dist, you.y + height, you.z - aheadZ * dist)
-    this.lookGoal.set(lookX + aheadX * 8, you.y + 0.5 + Math.sin(this.pitch) * 4, lookZ + aheadZ * 8)
+    if (lock) this.lookGoal.set(lock.x, lock.y + 0.4, lock.z)
+    else this.lookGoal.set(lookX + aheadX * 6, you.y + 0.5 + Math.sin(this.pitch) * 3.2, lookZ + aheadZ * 6)
     this.probeCamera(you)
   }
 
@@ -826,6 +978,58 @@ export class Game {
       const tree = treeById(node.mat)
       mesh.scale.setScalar(node.kind === 'tree' ? (tree?.cls === 'hard' ? 1.15 : 0.9) : node.kind === 'rock' ? 0.85 : 0.55)
     })
+  }
+
+
+  private syncPieces(): void {
+    const needed = this.world.pieces.length
+    while (this.pieceGroup.children.length < needed) {
+      const m = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 1, 1),
+        new THREE.MeshStandardMaterial({ color: 0xb89a6a, roughness: 0.84, metalness: 0.04 }),
+      )
+      m.castShadow = true
+      m.receiveShadow = true
+      this.pieceGroup.add(m)
+    }
+    const tint: Record<string, number> = { lean: 0x8a9a58, floor: 0x7a6a48, wall: 0x9a8a68, roof: 0x6a5840, door: 0x5a4834, den: 0x6a5a44 }
+    this.pieceGroup.children.forEach((obj, i) => {
+      const piece = this.world.pieces[i]
+      const mesh = obj as THREE.Mesh
+      if (!piece) {
+        mesh.visible = false
+        return
+      }
+      const def = pieceById(piece.kind)
+      mesh.visible = true
+      mesh.position.set(piece.x, piece.y, piece.z)
+      mesh.rotation.set(0, -piece.yaw, 0)
+      mesh.scale.set(def?.sx ?? 1, def?.sy ?? 1, def?.sz ?? 1)
+      const mat = mesh.material as THREE.MeshStandardMaterial
+      mat.color.setHex(tint[piece.kind] ?? 0xb89a6a)
+    })
+  }
+
+  private updateGhost(): void {
+    const you = playerOf(this.world)
+    if (!this.buildMode) {
+      this.ghost.visible = false
+      return
+    }
+    const def = PIECES[this.buildIndex]
+    if (!def) {
+      this.ghost.visible = false
+      return
+    }
+    const aim = this.aimPoint(you)
+    const check = canPlace(this.world, you, def.id, aim.x, aim.y, aim.z, you.yaw + this.buildYaw, this.buildFree)
+    this.ghost.visible = true
+    this.ghost.position.set(check.pose.x, check.pose.y, check.pose.z)
+    this.ghost.rotation.set(0, -check.pose.yaw, 0)
+    this.ghost.scale.set(def.sx, def.sy, def.sz)
+    const mat = this.ghost.material as THREE.MeshStandardMaterial
+    mat.color.setHex(check.ok ? 0x6ec070 : 0xc05040)
+    mat.opacity = 0.48
   }
 
   private applyCamFeel(dt: number): void {
@@ -904,10 +1108,11 @@ export class Game {
     const pads = navigator.getGamepads?.()
     const pad = pads ? Array.from(pads).find((p) => p && p.connected) ?? null : null
     const connected = !!pad
+    const map = document.getElementById('pad-map')
     if (connected && !this.padOn) {
       this.padOn = true
       this.touchForced = false
-      this.padPromptT = 2.4
+      this.padPromptT = 2.2
       const prompt = document.getElementById('pad-prompt')
       if (prompt) prompt.hidden = false
       this.applyTouchVisibility()
@@ -917,12 +1122,10 @@ export class Game {
       this.touchForced = false
       this.applyTouchVisibility()
     }
-    this.gp = { lx: 0, ly: 0, rx: 0, ry: 0, attack: false, dig: false, rise: false, dive: false }
-    const remember = () => {
-      for (let i = 0; i < 16; i++) this.padPrev[i] = pressed(i)
-    }
+    if (map) map.hidden = !this.padOn || !this.playing || this.settingsOpen || this.mapOpen
+    this.gp = { lx: 0, ly: 0, rx: 0, ry: 0, attack: false, horn: false, dash: false, dig: false, rise: false, dive: false, sprint: false, use: false }
     if (!pad) return
-    const pressed = (i: number) => !!pad.buttons[i]?.pressed
+    const pressed = (i: number) => !!pad.buttons[i]?.pressed || (pad.buttons[i]?.value ?? 0) > 0.45
     const edge = (i: number) => {
       const now = pressed(i)
       const was = this.padPrev[i] ?? false
@@ -933,19 +1136,18 @@ export class Game {
     const ly = pad.axes[1] ?? 0
     const rx = pad.axes[2] ?? 0
     const ry = pad.axes[3] ?? 0
-    const using = pad.buttons.some((b) => b.pressed) || Math.hypot(lx, ly, rx, ry) > 0.28
+    const using = pad.buttons.some((b) => b.pressed || b.value > 0.2) || Math.hypot(lx, ly, rx, ry) > 0.28
     if (using && this.touchForced) {
       this.touchForced = false
       this.applyTouchVisibility()
     }
-    if (edge(9)) this.toggleMap()
-    if (edge(8)) this.toggleSettings()
+    if (edge(9)) this.toggleSettings(true)
+    if (edge(8)) this.toggleMap()
     const menu = this.menuTargets()
     if (this.mapOpen && !this.settingsOpen) {
       this.mapOffX += lx * dt * 36
       this.mapOffZ += ly * dt * 36
       if (edge(1)) this.toggleMap(false)
-      remember()
       return
     }
     if (menu.length) {
@@ -964,27 +1166,44 @@ export class Game {
         if (this.settingsOpen) this.toggleSettings(false)
         else if (this.mapOpen) this.toggleMap(false)
       }
-      remember()
       return
     }
-    remember()
-    this.gp = { lx, ly, rx, ry, attack: pressed(0), dig: pressed(1), dive: pressed(2), rise: pressed(3) }
-    if (Math.abs(rx) > 0.18) this.yawT -= rx * dt * 0.85 * this.lookSens
+    if (Math.abs(rx) > 0.18) this.yawT -= rx * dt * 1.15 * this.lookSens
     if (Math.abs(ry) > 0.18) {
-      const pitchDelta = (this.invertY ? ry : -ry) * dt * 0.55 * this.lookSens
-      this.pitchT = Math.max(-1.05, Math.min(1.05, this.pitchT + pitchDelta))
+      const pitchDelta = (this.invertY ? ry : -ry) * dt * 0.7 * this.lookSens
+      this.pitchT = Math.max(-1.15, Math.min(1.15, this.pitchT + pitchDelta))
     }
-    if (edge(4)) {
-      if (this.cd.dash <= 0) {
-        this.cd.dash = 1.15
-        this.dashT = 0.2
-      }
+    if (this.buildMode) {
+      if (edge(4) || edge(14)) this.cyclePiece(-1)
+      if (edge(5) || edge(15)) this.cyclePiece(1)
+      if (edge(12) || edge(13)) this.buildYaw += edge(12) ? Math.PI / 2 : -Math.PI / 2
+      if (edge(0) || edge(7)) this.confirmPlace()
+      if (edge(2)) this.pickupPiece()
+      if (edge(1)) this.toggleBuild(false)
+      if (edge(3)) this.toggleBuild(false)
+      this.gp = { lx, ly, rx, ry, attack: false, horn: false, dash: false, dig: false, rise: false, dive: false, sprint: pressed(10), use: false }
+      return
     }
-    if (edge(5)) {
-      if (this.cd.horn <= 0) {
-        this.cd.horn = 1.7
-        this.hornT = 0.18
-      }
+    if (edge(3)) this.toggleBuild(true)
+    if (edge(11)) this.toggleLock()
+    if (edge(1) && this.cd.dash <= 0) {
+      this.cd.dash = 1.05
+      this.dashT = 0.2
+    }
+    if (pressed(6) && this.cd.horn <= 0) {
+      this.cd.horn = 1.7
+      this.hornT = 0.18
+    }
+    this.gp = {
+      lx, ly, rx, ry,
+      attack: pressed(7),
+      horn: pressed(6),
+      dash: false,
+      dig: pressed(2),
+      rise: pressed(4) || pressed(12) || pressed(0),
+      dive: pressed(5) || pressed(13),
+      sprint: pressed(10),
+      use: pressed(2),
     }
   }
 
@@ -1027,61 +1246,103 @@ export class Game {
     const right = k.has('d') || k.has('arrowright')
     const forwardKey = k.has('w') || k.has('arrowup')
     const backKey = k.has('s') || k.has('arrowdown')
-    let forward = (forwardKey ? 1 : 0) - (backKey ? 1 : 0) + this.stick.y - (Math.abs(this.gp.ly) > 0.2 ? this.gp.ly : 0)
-    let ax = (right ? 1 : 0) - (left ? 1 : 0) + this.stick.x + (Math.abs(this.gp.lx) > 0.2 ? this.gp.lx : 0)
-    let ay = 0
+    let camForward = (forwardKey ? 1 : 0) - (backKey ? 1 : 0) + this.stick.y - (Math.abs(this.gp.ly) > 0.2 ? this.gp.ly : 0)
+    let camStrafe = (right ? 1 : 0) - (left ? 1 : 0) + this.stick.x + (Math.abs(this.gp.lx) > 0.2 ? this.gp.lx : 0)
     let jump = k.has(' ') || this.riseHeld || this.gp.rise
-    const dive = k.has('shift') || k.has('c') || this.diveHeld || this.gp.dive
-    let bite = k.has('j') || this.mouseBite || this.gp.attack
+    const dive = k.has('c') || k.has('control') || this.diveHeld || this.gp.dive
+    const sprint = k.has('shift') || this.gp.sprint
+    let bite = !this.buildMode && (k.has('j') || this.mouseBite || this.gp.attack)
     let dig = false
     let use = false
     const you = playerOf(this.world)
+    const orbit = this.yaw
+    const lock = this.world.ents.find((e) => e.id === this.lockId && e.alive)
+    if (!lock) this.lockId = 0
     if (this.dashT > 0) {
-      forward = 1
+      if (Math.hypot(camForward, camStrafe) < 0.2) camForward = 1
       this.dashT -= dt
     }
     if (this.hornT > 0) {
-      forward = 1
+      camForward = 1
       bite = true
       this.hornT -= dt
     }
-    if (this.actHeld || this.gp.dig) {
-      const near = this.world.nodes.some((n) => n.amount > 0 && Math.abs(n.x - you.x) < 2.2)
-      if (near) use = true
-      else dig = true
+    if ((this.actHeld || this.gp.dig || k.has('f')) && !this.buildMode) {
+      if (this.pickupPiece()) {
+        use = false
+        dig = false
+      } else {
+        const near = this.world.nodes.some((n) => n.amount > 0 && Math.abs(n.x - you.x) < 2.2)
+        if (near) use = true
+        else dig = true
+      }
     }
-    if (!backKey && forward > -0.2) forward = Math.min(1, forward + 0.62)
-    if (bite) {
-      const aim = nearestInCone(this.world, you)
+    if (this.buildMode && (this.actHeld || k.has('f'))) this.pickupPiece()
+    if (!backKey && camForward > -0.2 && !this.buildMode) camForward = Math.min(1, camForward + 0.62)
+    // Camera-relative move; when locked, face the prey and strafe around it.
+    let moveF = camForward
+    let moveS = camStrafe
+    if (lock) {
+      const want = Math.atan2(lock.z - you.z, lock.x - you.x)
+      let turn = want - you.yaw
+      while (turn > Math.PI) turn -= Math.PI * 2
+      while (turn < -Math.PI) turn += Math.PI * 2
+      you.yaw += turn * Math.min(1, dt * 8)
+      this.yawT += ((want - this.yaw + Math.PI * 3) % (Math.PI * 2) - Math.PI) * 0.08
+    } else if (Math.hypot(camForward, camStrafe) > 0.15) {
+      const wish = Math.atan2(
+        Math.sin(orbit) * camForward + Math.cos(orbit) * camStrafe,
+        Math.cos(orbit) * camForward - Math.sin(orbit) * camStrafe,
+      )
+      let turn = wish - you.yaw
+      while (turn > Math.PI) turn -= Math.PI * 2
+      while (turn < -Math.PI) turn += Math.PI * 2
+      you.yaw += turn * Math.min(1, dt * 8)
+      moveF = Math.min(1, Math.hypot(camForward, camStrafe))
+      moveS = 0
+    }
+    if (bite || this.lockId) {
+      const aim = lock ?? nearestInCone(this.world, you)
       if (aim) {
         const adx = aim.x - you.x
         const adz = aim.z - you.z
         const want = Math.atan2(adz, adx)
-        let turn = want - this.yaw
+        let turn = want - you.yaw
         while (turn > Math.PI) turn -= Math.PI * 2
         while (turn < -Math.PI) turn += Math.PI * 2
-        this.yaw += turn * 0.9
-        this.yawT = this.yaw
+        you.yaw += turn * (bite ? 0.85 : 0.2)
         const dist = Math.hypot(adx, adz) || 1
         const wantP = Math.atan2(aim.y - you.y, dist) * 0.85
-        this.pitch += (wantP - this.pitch) * 0.55
+        this.pitch += (wantP - this.pitch) * (bite ? 0.55 : 0.12)
         this.pitchT = this.pitch
       }
     }
-    you.yaw = this.yaw
     you.pitch = this.pitch
-    ax = Math.max(-1, Math.min(1, ax))
-    forward = Math.max(-1, Math.min(1, forward))
+    const fwd = Math.max(-1, Math.min(1, moveF))
+    const ax = Math.max(-1, Math.min(1, moveS))
     const lookClimb = Math.max(-1, Math.min(1, Math.sin(this.pitch) * 1.25))
-    ay = dive ? -1 : jump ? 1 : lookClimb
+    const ay = dive ? -1 : jump ? 1 : lookClimb
     const ease = 1 - Math.exp(-dt * 12)
     this.sAx += (ax - this.sAx) * ease
-    this.sAy += (forward - this.sAy) * ease
+    this.sAy += (fwd - this.sAy) * ease
     if (this.mouseUp) {
       this.mouseBite = false
       this.mouseUp = false
     }
-    return { ax: this.sAx, ay, jump: jump || lookClimb > 0.2, bite, dig: k.has('f') || dig, use: k.has('g') || use, ink: k.has('q'), dash: this.dashT > 0.12, horn: this.hornT > 0.1, forward: this.sAy, dive: dive || lookClimb < -0.2 }
+    return {
+      ax: this.sAx,
+      ay,
+      jump: jump || lookClimb > 0.2,
+      bite,
+      dig: k.has('f') || dig,
+      use: k.has('g') || use,
+      ink: false,
+      dash: this.dashT > 0.12 || this.gp.dash,
+      horn: this.hornT > 0.1 || this.gp.horn,
+      forward: this.sAy,
+      dive: dive || lookClimb < -0.2,
+      sprint,
+    }
   }
 
   private frame(): void {
@@ -1106,7 +1367,7 @@ export class Game {
       if (this.padPromptT <= 0) document.getElementById('pad-prompt')?.setAttribute('hidden', '')
     }
     if (this.world.hitStop > 0) this.world.hitStop = Math.max(0, this.world.hitStop - dt)
-    else if (this.playing && !this.paused && !this.evoOpen && !this.buildOpen && !this.world.over) {
+    else if (this.playing && !this.paused && !this.evoOpen && !this.settingsOpen && !this.mapOpen && !this.world.over) {
       const ev = step(this.world, dt, this.gather(dt))
       for (const e of ev) {
         if (e.t !== 'note') this.feel(e.t === 'eat' ? 'eat' : e.t)
@@ -1172,6 +1433,8 @@ export class Game {
     this.adaptResolution(dt)
     this.stepBubbles(dt, sea)
     this.syncNodes()
+    this.syncPieces()
+    this.updateGhost()
     if (this.hintLeft > 0) {
       this.hintLeft -= dt
       if (this.hintLeft <= 0) {
@@ -1449,6 +1712,12 @@ export class Game {
       }
     }
     set('banner', this.world.bannerT > 0 ? this.world.banner : '')
+    const lockEl = document.getElementById('lock-tag')
+    const lockedPrey = this.world.ents.find((e) => e.id === this.lockId && e.alive)
+    if (lockEl) {
+      lockEl.hidden = !lockedPrey
+      lockEl.textContent = lockedPrey ? `Lock · ${lockedPrey.name}` : ''
+    }
     const over = document.getElementById('overlay')
     const again = document.getElementById('resume')
     if (over) over.hidden = !this.world.over
@@ -1478,6 +1747,7 @@ export class Game {
           columns: world.columns,
           nodes: world.nodes,
           bases: world.bases,
+          pieces: world.pieces,
         }),
       )
     } catch {
@@ -1494,6 +1764,7 @@ export class Game {
         columns?: { x: number; dug: number; prog: number }[]
         nodes?: { id: number; mat: string; amount: number; hp: number }[]
         bases?: import('../shared/sim').Base[]
+        pieces?: import('../shared/build').Piece[]
       }
       const you = playerOf(this.world)
       if (data.load) you.load = { ...you.load, ...data.load }
@@ -1528,8 +1799,13 @@ export function mount(): Game | null {
     start: () => game.start(),
     snapshot: () => {
       const you = playerOf(game.world)
-      return { x: you.x, y: you.y, hp: you.hp, ep: you.ep, spent: you.spent, tier: tierOf(you.spent), jaw: you.load.jaw, wings: you.load.wings, region: you.region, pvp: game.world.pvp, bases: game.world.bases.length, raiders: game.world.raiders.length }
+      return { x: you.x, y: you.y, hp: you.hp, ep: you.ep, spent: you.spent, tier: tierOf(you.spent), jaw: you.load.jaw, wings: you.load.wings, region: you.region, pvp: game.world.pvp, bases: game.world.bases.length, raiders: game.world.raiders.length, pieces: game.world.pieces.length, lockId: game['lockId'], buildMode: game['buildMode'] }
     },
+    toggleBuild: (on?: boolean) => game.toggleBuild(on),
+    toggleLock: () => game.toggleLock(),
+    place: () => game['confirmPlace'](),
+    pickup: () => game['pickupPiece'](),
+    cycle: (dir: number) => game['cyclePiece'](dir),
   }
   ;(window as unknown as { evo: typeof api }).evo = api
   return game
@@ -1541,8 +1817,8 @@ function earlyGoal(w: World, you: Ent, fallback: string): string {
     if (you.spent < 12) return 'Grow lungs — first grow a steelhead, then Evolve (E)'
     return you.ep >= 6 ? 'Grow lungs — open Evolve (E)' : 'Grow lungs — earn 6 EP, then Evolve (E)'
   }
-  const mine = w.bases.some((b) => b.owner === you.id)
-  if (!mine) return 'Dig a den — gather 2 kelp, then Build (B) a lean-to'
+  const mine = w.bases.some((b) => b.owner === you.id) || w.pieces.some((p) => p.owner === you.id && (p.kind === 'lean' || p.kind === 'den'))
+  if (!mine) return 'Dig a den — gather 2 kelp, then Build (B) and place a lean-to'
   if (you.x < 66) return 'Reach the first shore'
   const boss = w.ents.find((e) => e.kind === 'boss')
   if (boss?.alive) return 'The Strand Colossus bars the inland. Defeat it to pass.'
