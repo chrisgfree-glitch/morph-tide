@@ -490,7 +490,7 @@ export function buildCreature(load: Loadout, spent: number, role: 'player' | 'np
     )
   }
   if (horn && horn.feat && horn.feat !== 'none') {
-    const spike = part(g, GEO.horn, headX - 0.05, headY + 0.2, 0, 1, 0.7 + (horn.bite ?? 1) * 0.15, 1, accent, '', 0.5, 0.12, 'hide', false)
+    const spike = part(g, GEO.horn, headX - 0.05, headY + 0.2, 0, 1, 0.7 + (horn.bite ?? 1) * 0.15, 1, accent, 'horn', 0.5, 0.12, 'hide', false)
     spike.rotation.z = -0.4
   }
   if (!land || load.lungs < 1) {

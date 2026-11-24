@@ -1,5 +1,5 @@
 import type { Loadout } from './catalog'
-import { jawById } from './catalog'
+import { hornById, jawById } from './catalog'
 import { tierOf } from './rules'
 
 /** Visual scale. A tier-1 swimmer is about 55% of the old 1.27 body, then grows with tier and size. */
@@ -26,6 +26,14 @@ export interface BodyBox {
   biteR: number
 }
 
+export interface HitVol {
+  kind: 'jaw' | 'horn' | 'claw'
+  x: number
+  y: number
+  z: number
+  r: number
+}
+
 const SPECIES: Record<string, { long: number; tall: number }> = {
   shrimp: { long: 0.78, tall: 0.82 },
   needle: { long: 1.28, tall: 0.62 },
@@ -45,6 +53,61 @@ export function bodyBox(load: Loadout, spent: number, boss = false, species = ''
   const mouth = (land ? 1.15 : 0.78) * scale * shape.long + jlen * 0.4
   const biteR = (0.16 + (jaw?.wd ?? 0.16) * 0.22 + (jaw?.ht ?? 0.12) * 0.08) * scale
   return { scale, mass, long: shape.long, tall: shape.tall, len, rad, mouth, biteR }
+}
+
+/** Per-part attack volumes at the visible jaw, horn, and claws. */
+export function attackVolumes(
+  load: Loadout,
+  spent: number,
+  boss: boolean,
+  species: string,
+  x: number,
+  y: number,
+  z: number,
+  yaw: number,
+): HitVol[] {
+  const box = bodyBox(load, spent, boss, species)
+  const cs = Math.cos(yaw)
+  const sn = Math.sin(yaw)
+  const vols: HitVol[] = []
+  vols.push({
+    kind: 'jaw',
+    x: x + cs * box.mouth,
+    y: y + box.rad * 0.05,
+    z: z + sn * box.mouth,
+    r: box.biteR,
+  })
+  const horn = hornById(load.horn)
+  if (horn && load.horn && load.horn !== 'smooth') {
+    const reach = box.mouth + (horn.len ?? 0.3) * box.scale * 0.55
+    vols.push({
+      kind: 'horn',
+      x: x + cs * reach,
+      y: y + box.rad * 0.55,
+      z: z + sn * reach,
+      r: 0.12 * box.scale + (horn.wd ?? 0.12) * 0.14 * box.scale,
+    })
+  }
+  const claws = load.arms > 0 || load.armType === 'claw' || load.armType === 'spade' || load.feet === 'claw'
+  if (claws && (load.arms > 0 || load.legs > 0)) {
+    const side = box.rad * 0.95
+    const fwd = box.mouth * 0.55
+    const r = 0.16 * box.scale + (load.arms > 0 ? 0.04 : 0)
+    vols.push({ kind: 'claw', x: x + cs * fwd - sn * side, y: y - box.rad * 0.1, z: z + sn * fwd + cs * side, r })
+    vols.push({ kind: 'claw', x: x + cs * fwd + sn * side, y: y - box.rad * 0.1, z: z + sn * fwd - cs * side, r })
+  }
+  return vols
+}
+
+export function volumeHits(vols: HitVol[], bx: number, by: number, bz: number, br: number): HitVol | null {
+  for (const v of vols) {
+    const dx = bx - v.x
+    const dy = by - v.y
+    const dz = bz - v.z
+    const reach = v.r + br
+    if (dx * dx + dy * dy + dz * dz <= reach * reach) return v
+  }
+  return null
 }
 
 export function mouthHit(ax: number, ay: number, az: number, yaw: number, a: BodyBox, bx: number, by: number, bz: number, b: BodyBox): boolean {
