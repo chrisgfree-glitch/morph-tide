@@ -42,14 +42,23 @@ Water and terrain shaders already included `<tonemapping_fragment>` and
   tunnel in the density and walk the new floor; side walls of deep tubes are
   only partly expressed by `groundAt`.
 - Persistence is local to one browser profile, capped at 8000 carve cells.
-- Phone and desktop smoke tests are recorded after the preview deploy.
+- Local and live-preview smoke tests are recorded below. Real-phone play is still outstanding.
 
 ## Preview deploy
 
-A preview deploy was attempted with the Vercel CLI (`npx vercel --yes`, no
-`--prod`). `VERCEL_TOKEN` is present in the environment, but `vercel whoami`
-and the deploy both returned `User not found`. Production was not promoted.
-There is no preview URL from this pass.
+A first preview attempt with the Vercel CLI (`npx vercel --yes`, no `--prod`)
+failed with `User not found`. Production was not promoted.
+
+A second attempt on 2026-11-24 at 11:36 AM PT (America/Los_Angeles) used the
+Vercel connector (`create_deployment` from Git, target omitted so it stayed
+preview). That deployment is READY and is not protection-gated (HTTP 200,
+no share token needed). Production was not promoted.
+
+- Preview URL: https://evo-back-to-eden-k50cqwgqh-chrisgfree-5870.vercel.app
+- Branch alias: https://evo-back-to-eden-git-coding-guy-phase1-chrisgfree-5870.vercel.app
+- Deployment id: `dpl_AVEjJsygJkT3dYCyHbXXLKVB7Rrh`
+- Deployed commit: `6d0b002` (`6d0b0026ad01530bbef81d3f9f28f1a11087f251`)
+  on `coding-guy/phase1` (banner overlap fix)
 
 ## Local smoke (2026-11-22, America/Los_Angeles, afternoon)
 
@@ -69,5 +78,31 @@ feel in a long play session, save/reload of a dug tunnel, or contrast
 measurement with a WCAG meter (sizes and colors were checked in CSS and
 bounding boxes).
 
-Known visual issue: the first-run help banner overlaps the Grow button and
-part of the HP line, especially in landscape.
+Known visual issue from that local pass (banner overlapping Grow and the HP
+line in landscape) was fixed in `6d0b002` and rechecked on the live preview.
+
+## Live preview smoke (2026-11-24, 11:37 AM PT, America/Los_Angeles)
+
+Playwright (system Chrome + SwiftShader) hit the live preview
+https://evo-back-to-eden-k50cqwgqh-chrisgfree-5870.vercel.app :
+
+- Desktop 1280×800: page loads (HTTP 200), title screen, Solo start, WebGL
+  canvas, 3D shallows, HUD. Banner ("Shallows. Eat, then spend EP…") sits
+  below the first-run hint and does not overlap Grow or the HP line.
+  Screenshots: `smoke/preview-desktop-title.png`, `smoke/preview-desktop.png`.
+- Phone landscape 844×390: same path works; stick, Attack, Rise, Dive, and
+  other orbs are visible. Grow sits under the goal line; the hint and banner
+  sit under Grow with a gap. No overlap with Grow or HP.
+  Screenshots: `smoke/preview-phone-land-title.png`,
+  `smoke/preview-phone-land.png`.
+
+A `readPixels` sample of the default framebuffer was all zero on both sizes
+(likely `preserveDrawingBuffer` is off). The screenshots show the rendered
+seabed, fish, and plants, so the canvas is treated as visually confirmed.
+
+Not verified: play on a physical phone, save/reload of a dug tunnel, a long
+dig/cut/break session, or contrast measurement with a WCAG meter.
+
+Other notes from this pass: the landscape title screen clips the "MORPH"
+word at the top and the controller help at the bottom at 844×390. That was
+not part of the banner fix and was not changed.
