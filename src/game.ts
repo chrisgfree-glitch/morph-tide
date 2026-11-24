@@ -737,6 +737,8 @@ export class Game {
     document.getElementById('map')?.setAttribute('hidden', '')
     document.getElementById('overlay')?.setAttribute('hidden', '')
     document.getElementById('pad-map')?.setAttribute('hidden', '')
+    document.getElementById('save-toast')?.setAttribute('hidden', '')
+    this.toastT = 0
     document.getElementById('title')?.removeAttribute('hidden')
     this.applyTouchVisibility()
     this.syncPause()
