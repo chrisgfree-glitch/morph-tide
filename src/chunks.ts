@@ -159,11 +159,11 @@ export class ChunkWorld {
         bucket.mesh.setMatrixAt(bucket.n, dummy.matrix)
         const wet = x < 72 ? 1 : 0
         const tone = (c * 7 + i * 13) % 5
-        if (tone === 0) moss.setRGB(0.32 + wet * 0.04, 0.48 + wet * 0.12, 0.3)
-        else if (tone === 1) moss.setRGB(0.4, 0.52 + wet * 0.1, 0.34)
-        else if (tone === 2) moss.setRGB(0.48, 0.44, 0.36)
-        else if (tone === 3) moss.setRGB(0.3 + wet * 0.05, 0.42, 0.38)
-        else moss.setRGB(0.5, 0.46, 0.4)
+        if (tone === 0) moss.setRGB(0.58 + wet * 0.06, 0.74 + wet * 0.08, 0.5)
+        else if (tone === 1) moss.setRGB(0.66, 0.78 + wet * 0.06, 0.54)
+        else if (tone === 2) moss.setRGB(0.76, 0.7, 0.56)
+        else if (tone === 3) moss.setRGB(0.56 + wet * 0.05, 0.7, 0.58)
+        else moss.setRGB(0.8, 0.74, 0.62)
         moss.offsetHSL(0, 0, ((i % 5) - 2) * 0.03)
         bucket.mesh.setColorAt(bucket.n, moss)
         bucket.n++
@@ -300,7 +300,7 @@ export class ChunkWorld {
 }
 
 function rockMaterial(): THREE.MeshStandardMaterial {
-  const mat = new THREE.MeshStandardMaterial({ color: 0x7d8a72, roughness: 0.86, metalness: 0.02 })
+  const mat = new THREE.MeshStandardMaterial({ color: 0xc5d0b4, roughness: 0.78, metalness: 0.02, emissive: 0x1a2418, emissiveIntensity: 0.08 })
   const loader = new THREE.TextureLoader()
   ;(['rock_color', 'rock_normal', 'rock_rough'] as const).forEach((name, i) => {
     loader.load(`/textures/${name}.webp`, (tex) => {
