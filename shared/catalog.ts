@@ -535,6 +535,7 @@ export interface BuildDef {
 }
 
 export const BUILDINGS: BuildDef[] = [
+  { id: 'lean', name: 'Lean-to', tier: 1, hp: 22, heal: 1, storage: false, under: false, sea: true, cost: { kelp: 2 } },
   { id: 'nest', name: 'Nest', tier: 5, hp: 40, heal: 1, storage: false, under: false, sea: false, cost: { sticks: 4, mud: 2 } },
   { id: 'burrow', name: 'Burrow', tier: 3, hp: 30, heal: 0, storage: false, under: true, sea: false, cost: { mud: 3 } },
   { id: 'den', name: 'Den', tier: 5, hp: 70, heal: 2, storage: true, under: false, sea: false, cost: { sticks: 4, stone: 3, hide: 1 } },
@@ -570,7 +571,54 @@ export const NPC_CAP = 16
 export const SHARD_CAP = 100
 export const TICK_MS = 100
 
+export const ROCK_TINT: Record<string, number> = {
+  chalk: 0xece6d8,
+  pumice: 0xc9b8a4,
+  sandstone: 0xc9a06a,
+  shale: 0x6a6560,
+  limestone: 0xd4cdb8,
+  'coral-rock': 0xd48980,
+  slate: 0x4a5560,
+  flint: 0x3a3a3c,
+  granite: 0x8a8680,
+  basalt: 0x3c3a40,
+  marble: 0xf2eee8,
+  quartz: 0xe8dff0,
+  copper: 0xb87333,
+  'jade-rock': 0x3d7a5a,
+  iron: 0x6a5a52,
+  goldrock: 0xd4b24a,
+  lavarock: 0x8a3a28,
+  obsidian: 0x1a1a22,
+  geode: 0x7a68a0,
+  'deep-stone': 0x2a3048,
+}
+
+export const TREE_TINT: Record<string, number> = {
+  oak: 0x6a4a28,
+  pine: 0x3d5c3a,
+  birch: 0xe8dcc0,
+  redwood: 0x8a3a28,
+  palm: 0x8a7a3a,
+  mangrove: 0x4a5a38,
+  bamboo: 0x7a9a40,
+  baobab: 0xa08058,
+  ironwood: 0x4a4848,
+  ebony: 0x2a2018,
+  cedar: 0x8a5a32,
+  willow: 0x7a8a48,
+  cypress: 0x4a5c4a,
+  kapok: 0x8a6a40,
+  ferntree: 0x4a7a38,
+  cycad: 0x5a6a30,
+  ginkgo: 0xd4c44a,
+  bloodwood: 0x8a2020,
+  petrified: 0x6a6868,
+  driftwood: 0x8a7a68,
+}
+
 export function rockById(id: string): Rock | undefined {
+
   return ROCKS.find((r) => r.id === id)
 }
 

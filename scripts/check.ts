@@ -1,5 +1,6 @@
 import { starterLoad } from '../shared/catalog'
 import { columnSeconds } from '../shared/dig'
+import { attackVolumes, volumeHits } from '../shared/body'
 import { createWorld, playerOf, step } from '../shared/sim'
 import { bodyBreakPower, cellSeconds, chopSeconds, tierOf } from '../shared/rules'
 
@@ -89,3 +90,28 @@ if (rocks.size < 20) throw new Error(`expected 20 rock kinds, got ${rocks.size}`
 
 console.log(`deep stone full ${full.toFixed(1)}s tube ${tube.toFixed(1)}s vent ${vent.toFixed(1)}s; raids ok; parts and nodes ok`)
 
+
+const vols = attackVolumes(starterLoad(), 0, false, 'you', 0, 0, 0, 0)
+if (!vols.some((v) => v.kind === 'jaw')) throw new Error('missing jaw volume')
+if (volumeHits(vols, 8, 0, 0, 0.2)) throw new Error('jaw should not reach 8m away')
+if (!volumeHits(vols, vols[0]!.x, vols[0]!.y, vols[0]!.z, 0.05)) throw new Error('jaw should hit at its own center')
+
+const gate = createWorld()
+const hero = playerOf(gate)
+hero.x = 130
+hero.y = 1.2
+hero.hp = 400
+hero.maxHp = 400
+hero.air = 400
+hero.spent = 200
+hero.load.lungs = 1
+hero.load.legs = 4
+hero.load.feet = 'claw'
+for (let i = 0; i < 20; i++) step(gate, 0.25, { ax: 1, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
+const boss = gate.ents.find((e) => e.kind === 'boss')
+if (!boss) throw new Error('colossus did not spawn past 128')
+boss.alive = false
+boss.hp = 0
+step(gate, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false })
+if (gate.won) throw new Error('defeating the colossus should open a gate, not win')
+if (!gate.gateOpen) throw new Error('colossus death should open the inland gate')

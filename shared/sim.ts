@@ -1,7 +1,7 @@
 import type { Loadout } from './catalog'
-import { GEMS, GUARD_CAP, HIDES, RAID_GAP, RAID_MIN_TIER, RAIDER_CAP, SHIELD_SEC, TIER_SPENT, WARN_SEC, buildById, defenseById, rockById, starterLoad, treeById } from './catalog'
+import { GEMS, GUARD_CAP, HIDES, RAID_GAP, RAID_MIN_TIER, RAIDER_CAP, SHIELD_SEC, WARN_SEC, buildById, defenseById, rockById, starterLoad, treeById } from './catalog'
 import { digTick, fullColumn, tubeColumn, ventColumn, type Column } from './dig'
-import { bodyBox, mouthHit } from './body'
+import { attackVolumes, bodyBox, volumeHits } from './body'
 import { WATER, WORLD_Z, carve, fill, groundAt } from './terrain'
 import { buySkin, buySpec, canDig, cellSeconds, chopSeconds, compute, defenseCap, gemChance, landOk, purchase, pvpFactor, tierOf, type Buy, type Progress } from './rules'
 
@@ -128,6 +128,8 @@ export interface World {
   caveIn: { t: number; x: number; dmg: number } | null
   nestMobs: number
   debris: { x: number; y: number; vy: number; life: number; dmg: number }[]
+  eats: number
+  gateOpen: boolean
 }
 
 export interface Frame {
@@ -229,9 +231,13 @@ export function createWorld(): World {
     caveIn: null,
     nestMobs: 0,
     debris: [],
+    eats: 0,
+    gateOpen: false,
   }
   w.ents.push(make({ id: w.nextId++, kind: 'player', name: 'Tidewisp', species: 'you', x: 8, y: 2.4 }))
   const seeds: [string, string, number, number, Ent['region'], number][] = [
+    ['Glass minnow', 'shrimp', 12, 3.0, 'sea', 0],
+    ['Tide fry', 'shrimp', 15, 2.6, 'sea', 0],
     ['Brine shrimp', 'shrimp', 18, 3.4, 'sea', 0],
     ['Kelp dart', 'needle', 28, 5, 'sea', 2],
     ['Ghost bell', 'bell', 40, 4, 'sea', 6],
@@ -492,6 +498,15 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   you.y = Math.max(0.35, Math.min(12, you.y))
   you.x = Math.max(2, Math.min(480, you.x))
   you.z = Math.max(-WORLD_Z + 1, Math.min(WORLD_Z - 1, you.z))
+  const colossus = w.ents.find((e) => e.kind === 'boss' && e.alive)
+  if (colossus && you.x > colossus.x - 5 && you.x < colossus.x + 6) {
+    you.x = colossus.x - 5
+    you.vx = Math.min(you.vx, 0)
+    if (w.bannerT <= 0.4) {
+      w.banner = 'The Strand Colossus bars the inland.'
+      w.bannerT = 2
+    }
+  }
   you.region = regionAt(you.x)
   you.biteCd = Math.max(0, you.biteCd - dt)
   you.biteT = Math.max(0, you.biteT - dt)
@@ -510,11 +525,12 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     you.biteCd = heavy ? 0.48 : 0.26
     you.recover = heavy ? 0.2 : 0.1
     const mine = bodyBox(you.load, you.spent, false, you.species)
+    const vols = attackVolumes(you.load, you.spent, false, you.species, you.x, you.y, you.z, you.yaw)
     for (const foe of w.ents) {
       if (!foe.alive || foe.id === you.id || foe.kind === 'meat') continue
       if (foe.clan && foe.clan === you.clan) continue
       const theirs = bodyBox(foe.load, foe.spent, foe.kind === 'boss', foe.species)
-      if (!mouthHit(you.x, you.y, you.z, you.yaw, mine, foe.x, foe.y, foe.z, theirs)) continue
+      if (!volumeHits(vols, foe.x, foe.y, foe.z, theirs.rad + theirs.len * 0.15)) continue
       const dmg = Math.max(1, Math.round(stats.bite * (heavy ? 1.65 : 1) * (1 + box.mass * 0.08)))
       hurt(foe, dmg)
       foe.vx = Math.cos(you.yaw) * (heavy ? 5.4 : 3.4) * box.mass
@@ -522,7 +538,7 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
       foe.vy += 1.2
       foe.stun = heavy ? 0.16 : 0.08
       w.shake = Math.max(w.shake, heavy ? 0.22 : 0.12)
-      w.hitStop = heavy ? 0.07 : 0.045
+      w.hitStop = heavy ? 0.1 : 0.065
       ev.push({ t: 'hit', x: foe.x, y: foe.y, text: `${dmg}` })
       if (!foe.alive) rewardKill(w, you, foe, ev)
       else {
@@ -599,18 +615,12 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     w.banner = 'Strand Colossus'
     w.bannerT = 3
   }
-  if (!w.won && tierOf(you.spent) >= TIER_SPENT.length && you.x >= 66) {
-    w.won = true
-    w.banner = 'The first shore holds.'
-    w.bannerT = 6
-    ev.push({ t: 'win', x: you.x, y: you.y, text: 'The tide moves on' })
-  }
   const boss = w.ents.find((e) => e.kind === 'boss')
-  if (boss && !boss.alive && !w.won) {
-    w.won = true
-    w.banner = 'The shore goes quiet.'
+  if (boss && !boss.alive && !w.gateOpen) {
+    w.gateOpen = true
+    w.banner = 'The Strand Colossus falls. The inland is open.'
     w.bannerT = 6
-    ev.push({ t: 'win', x: boss.x, y: boss.y, text: 'The tide moves on' })
+    ev.push({ t: 'gate', x: boss.x, y: boss.y, text: 'The inland opens' })
   }
   return ev
 }
@@ -771,8 +781,8 @@ function rewardKill(w: World, you: Ent, foe: Ent, ev: Evt[]): void {
   you.bag[hide] = (you.bag[hide] ?? 0) + 1
   you.bag.bones = (you.bag.bones ?? 0) + 1
   ev.push({ t: 'eat', x: foe.x, y: foe.y, text: `+${gain} EP` })
+  if (you.kind === 'player' && foe.kind !== 'boss') w.eats += 1
   autoEvolve(foe)
-  if (foe.kind === 'boss') w.won = true
 }
 
 function HIDEfor(foe: Ent): string {
@@ -822,8 +832,15 @@ function npcThink(w: World, dt: number, ev: Evt[]): void {
         target = o
         best = d
       }
+      if (e.bias >= 2 && o.kind === 'player' && d < 14) {
+        mode = 'chase'
+        target = o
+        best = d
+      }
     }
     if (target && e.hp < e.maxHp * 0.38) mode = 'flee'
+    if (e.bias <= 0 && target?.kind === 'player' && e.kind !== 'boss') mode = e.hp < e.maxHp ? 'flee' : 'wander'
+    if (e.bias >= 2 && target?.kind === 'player' && best < 14) mode = 'chase'
     const box = bodyBox(e.load, e.spent, e.kind === 'boss', e.species)
     const stats = compute(e.load, e.spent)
     const maxV = (e.region === 'sea' ? 3.2 + stats.swim * 0.08 : 4.2 + stats.spd * 0.08) / Math.sqrt(box.mass)
@@ -852,12 +869,14 @@ function npcThink(w: World, dt: number, ev: Evt[]): void {
       wish = (close ? Math.sin(w.time * 2.2 + e.id) : toward) * maxV * (e.kind === 'boss' ? 0.85 : 0.95)
       e.facing = Math.cos(e.yaw) >= 0 ? 1 : -1
       const theirs = bodyBox(target.load, target.spent, target.kind === 'boss', target.species)
-      const inMouth = mouthHit(e.x, e.y, e.z, e.yaw, box, target.x, target.y, target.z, theirs)
+      const vols = attackVolumes(e.load, e.spent, e.kind === 'boss', e.species, e.x, e.y, e.z, e.yaw)
+      const inMouth = !!volumeHits(vols, target.x, target.y, target.z, theirs.rad + theirs.len * 0.15)
       if (inMouth && e.biteCd <= 0 && e.tele <= 0 && teleWas <= 0) {
-        e.tele = 0.34
-        e.biteT = 0.34
-        ev.push({ t: 'bite', x: e.x, y: e.y, text: '' })
+        e.tele = e.kind === 'boss' ? 0.55 : 0.48
+        e.biteT = e.tele
+        ev.push({ t: 'warn', x: e.x, y: e.y, text: `${e.name} lunges!` })
       }
+      if (e.tele > 0) wish *= 0.08
       if (teleWas > 0 && e.tele === 0 && inMouth) {
         e.biteCd = 0.7
         const dmg = Math.max(1, Math.round((3 + e.bias / 10) * (0.8 + box.mass * 0.15)))
@@ -899,6 +918,7 @@ function meats(w: World, you: Ent, ev: Evt[]): void {
     if (Math.abs(m.x - you.x) < 1.2) {
       m.alive = false
       you.ep += 2
+      w.eats += 1
       ev.push({ t: 'eat', x: m.x, y: m.y, text: '+2 EP' })
     }
   }
