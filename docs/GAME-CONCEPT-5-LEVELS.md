@@ -14,7 +14,7 @@ Evolution is the core of the game. Build in phases; each phase needs Chris's OK 
 - 25 jaws, released slowly: 5 per level across the 5 levels.
 - Same 5-per-level pattern for fins and other fish/body parts (dorsal fins, horns, tusks, teeth, etc.).
 - 25 body types.
-- 25 hides (hair adds warmth). Note: Chris also said "20 hides" in the materials list — confirm 25 vs 20.
+- 25 hides (hair adds warmth). Confirmed 25 (Chris, 3:10 PM).
 
 ## Kills and crafting
 - Kills yield hide and crafting materials, not just food/evolution points.
@@ -23,7 +23,8 @@ Evolution is the core of the game. Build in phases; each phase needs Chris's OK 
 - Cold and hot biomes; you need a matching body type (fur/hide for cold, etc.) to survive there.
 
 ## Materials and bases
-- 25 rocks, 25 gems, 20 wood, 20 hides (see hides note above).
+- CONFIRMED (Chris, 3:10 PM): 25 hides, 25 wood, 25 rocks, 25 gems.
+- Other gatherable building materials too: kelp and similar, plus grass on land (e.g. thatch for roofs).
 - Up to 25 base types.
 
 ## Raids and multiplayer
