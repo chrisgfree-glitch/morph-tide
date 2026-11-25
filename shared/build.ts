@@ -1,6 +1,6 @@
 import type { Buy } from './rules'
 import { tierOf } from './rules'
-import { groundAt } from './terrain'
+import { groundAt, isDryLand } from './terrain'
 
 export interface PieceHost {
   pieces: Piece[]
@@ -121,7 +121,7 @@ export function placePiece(w: PieceHost, you: PieceOwner, kind: string, x: numbe
   const def = pieceById(kind)
   if (!def) return { ok: false, reason: 'Unknown piece' }
   if (tierOf(you.spent) < def.tier) return { ok: false, reason: `Unlocks at tier ${def.tier}` }
-  if (!def.sea && you.x < 66) return { ok: false, reason: 'Needs the first shore' }
+  if (!def.sea && !isDryLand(you.x, 0)) return { ok: false, reason: 'Needs the first shore' }
   const pose = snapPose(w, def, x, y, z, yaw)
   if (pieceBlocked(w, def, pose.x, pose.y, pose.z, pose.yaw)) return { ok: false, reason: 'Blocked' }
   if (!free && !canAfford(you.bag, def.cost)) return { ok: false, reason: `Need ${costLine(def.cost)}` }
@@ -159,7 +159,7 @@ export function canPlace(w: PieceHost, you: PieceOwner, kind: string, x: number,
   const fallback = { x, y, z, yaw }
   if (!def) return { ok: false, pose: fallback, reason: 'Unknown piece' }
   if (tierOf(you.spent) < def.tier) return { ok: false, pose: fallback, reason: `Unlocks at tier ${def.tier}` }
-  if (!def.sea && you.x < 66) return { ok: false, pose: fallback, reason: 'Needs the first shore' }
+  if (!def.sea && !isDryLand(you.x, 0)) return { ok: false, pose: fallback, reason: 'Needs the first shore' }
   const pose = snapPose(w, def, x, y, z, yaw)
   if (pieceBlocked(w, def, pose.x, pose.y, pose.z, pose.yaw)) return { ok: false, pose, reason: 'Blocked' }
   if (!free && !canAfford(you.bag, def.cost)) return { ok: false, pose, reason: `Need ${costLine(def.cost)}` }

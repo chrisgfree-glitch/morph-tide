@@ -3,13 +3,13 @@ import { GEMS, GUARD_CAP, HIDES, RAID_GAP, RAID_MIN_TIER, RAIDER_CAP, SHIELD_SEC
 import { digTick, fullColumn, tubeColumn, ventColumn, type Column } from './dig'
 import type { Piece } from './build'
 import { attackVolumes, bodyBox, mouthHit, volumeHits, youngBite } from './body'
-import { CHUNK, WATER, WORLD_Z, carve, fill, groundAt } from './terrain'
+import { CHUNK, VOLCANO_X, WATER, WORLD_Z, carve, fill, groundAt, isDryLand, shoreX } from './terrain'
 import { bossReady, buySkin, buySpec, canDig, cellSeconds, chopSeconds, compute, defenseCap, gemChance, landOk, purchase, pvpFactor, tierOf, type Buy, type Progress } from './rules'
 import { agility, ashoreNeed, hornDamage, incomingMissChance, morphFx, morphOf, tryBuy, type BuyResult } from './evolve'
 import { createSpawners, kindById, mulberry32, seedSpawners, stepSpawners, type SpawnRequest, type Spawner } from './prey'
 import { createHealPlants, stepHealPlants, tryEatPlant, type HealPlant } from './plants'
 import { addDrops, forageDrop, gearFx, spendCraft } from './craft'
-import { scatterChunk } from './landcover'
+import { scatterChunk, trunkRadius } from './landcover'
 
 export interface Ent {
   id: number
@@ -119,6 +119,8 @@ export interface Node {
   z?: number
   amount: number
   hp: number
+  /** Trunk or rock radius used to keep the body out of scenery. */
+  rad?: number
 }
 
 export interface Placeable {
@@ -263,7 +265,7 @@ function applySpawn(w: World, req: SpawnRequest): void {
   if (pooled) {
     pooled.alive = true
     pooled.x = req.x
-    pooled.y = req.y
+    pooled.y = kind.region === 'sea' ? req.y : groundAt(req.x, req.z, 16) + 0.16
     pooled.z = req.z
     pooled.vx = 0
     pooled.vy = 0
@@ -299,7 +301,7 @@ function applySpawn(w: World, req: SpawnRequest): void {
       name: kind.name,
       species: kind.species,
       x: req.x,
-      y: req.y,
+      y: kind.region === 'sea' ? req.y : groundAt(req.x, req.z, 16) + 0.16,
       z: req.z,
       region: kind.region,
       bias: kind.bias,
@@ -337,11 +339,11 @@ function seedForage(w: World): void {
     for (let cz = -3; cz <= 3; cz++) {
       const scatter = scatterChunk(cx, cz, CHUNK, groundAt, 'mid')
       for (const s of scatter.trees) {
-        w.nodes.push({ id: w.nextId++, kind: 'tree', mat: s.kind, x: s.x, z: s.z, amount: 3, hp: 8 })
+        w.nodes.push({ id: w.nextId++, kind: 'tree', mat: s.kind, x: s.x, z: s.z, amount: 3, hp: 8, rad: trunkRadius(s.kind, s.scale) })
       }
       for (const s of scatter.rocks) {
         if (s.kind === 'pebble' && (s.x * 10) % 3 > 1) continue
-        w.nodes.push({ id: w.nextId++, kind: 'rock', mat: s.x < 80 ? 'coral-rock' : 'stone', x: s.x, z: s.z, amount: 2, hp: 6 })
+        w.nodes.push({ id: w.nextId++, kind: 'rock', mat: s.x < 80 ? 'coral-rock' : 'stone', x: s.x, z: s.z, amount: 2, hp: 6, rad: trunkRadius(s.kind, s.scale) })
       }
       for (const s of scatter.plants) {
         w.nodes.push({ id: w.nextId++, kind: 'plant', mat: s.kind, x: s.x, z: s.z, amount: 2, hp: 3 })
@@ -616,10 +618,23 @@ export function tryPurchase(e: Ent, kind: string, id: string): Buy {
   return result
 }
 
-function regionAt(x: number): Ent['region'] {
-  if (x < 66) return 'sea'
-  if (x > 168) return 'volcano'
-  return 'land'
+function pushSolids(w: World, you: Ent): void {
+  for (const n of w.nodes) {
+    if (n.amount <= 0 || !n.rad || n.rad < 0.18) continue
+    if (n.kind !== 'tree' && n.kind !== 'rock') continue
+    const dx = you.x - n.x
+    const dz = you.z - (n.z ?? 0)
+    const d = Math.hypot(dx, dz)
+    if (d >= n.rad || d < 1e-4) continue
+    you.x = n.x + (dx / d) * n.rad
+    you.z = (n.z ?? 0) + (dz / d) * n.rad
+  }
+}
+
+function regionAt(x: number, z = 0): Ent['region'] {
+  if (x >= VOLCANO_X) return 'volcano'
+  if (isDryLand(x, z)) return 'land'
+  return 'sea'
 }
 
 function hurt(e: Ent, amount: number): void {
@@ -695,16 +710,15 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   const box = bodyBox(you.load, you.spent, false, you.species)
   const ground = 1.12
   const slow = you.slow > 0 ? 0.55 : 1
-  if (!landOk(you.load, you.spent)) {
-    if (you.x >= 64.5 && !w.shoreWarned) {
-      w.shoreWarned = true
-      w.banner = ashoreNeed()
-      w.bannerT = 6
-      ev.push({ t: 'note', x: you.x, y: you.y, text: 'The shore is closed until you can breathe on land.' })
-    }
-    you.x = Math.min(you.x, 66)
+  const dryUnder = isDryLand(you.x, you.z)
+  // Stay in the water a little past the surface so gravity and buoyancy do not fight every frame.
+  const submerged = !dryUnder && you.y < WATER + (you.y < WATER ? 0.16 : -0.08)
+  if (!landOk(you.load, you.spent) && you.x >= shoreX(you.z) - 4 && !w.shoreWarned) {
+    w.shoreWarned = true
+    w.banner = ashoreNeed()
+    w.bannerT = 6
+    ev.push({ t: 'note', x: you.x, y: you.y, text: 'The shore is closed until you can breathe on land.' })
   }
-  const submerged = you.x < 68 && you.y < WATER
   const drag = (0.85 + box.mass * 0.5 + you.load.fin * 0.14) / (you.slow > 0 ? 0.7 : 1)
   const fwd = you.stun > 0 ? 0 : Math.max(-1, Math.min(1, input.forward ?? 0))
   const strafe = you.stun > 0 ? 0 : Math.max(-1, Math.min(1, input.ax))
@@ -734,7 +748,7 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     const sprint = input.sprint ? 1.35 : 1
     const maxRun = ((4.4 + stats.spd * 0.1) * slow * sprint) / Math.sqrt(box.mass)
     const runA = (20 / box.mass) * (you.stun > 0 ? 0.2 : 1) * agility(morphOf(you.load)).accel
-    const flop = you.x >= 62 && !landOk(you.load, you.spent)
+    const flop = dryUnder && !landOk(you.load, you.spent)
     you.vx = approach(you.vx, flop ? -1.1 : wishX * maxRun, flop ? 6 : runA, dt)
     you.vz = approach(you.vz, flop ? 0 : wishZ * maxRun, flop ? 6 : runA, dt)
     if (you.y > ground + 0.35) you.peak = Math.max(you.peak, you.y)
@@ -744,7 +758,7 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     if (flop && you.y <= ground + 0.08) you.vy = Math.max(you.vy, Math.sin(w.time * 9) * 1.1)
     const heat = you.region === 'volcano' && stats.heat <= 0
     you.air -= dt * (heat ? 1.6 : 1) * gear.dry
-    if (you.x < 72) you.air = Math.min(stats.air, you.air + dt * 6)
+    if (you.y < WATER + 0.35 || !dryUnder) you.air = Math.min(stats.air, you.air + dt * 6)
     if (you.load.lungs > 0 && you.air <= 0) {
       you.air = 0
       hurt(you, 4 * dt * 3)
@@ -812,15 +826,30 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
       ev.push({ t: 'hurt', x: you.x, y: you.y, text: `${Math.ceil(dmg)}` })
     } else if (drop > 1.4) w.shake = Math.max(w.shake, 0.08)
   }
-  if (submerged) you.y = Math.max(groundAt(you.x, you.z, you.y) + 0.35, you.y)
-  you.y = Math.max(0.35, Math.min(12, you.y))
+  if (submerged) {
+    const bed = groundAt(you.x, you.z, you.y) + 0.35
+    if (you.y <= bed) {
+      you.y = bed
+      if (you.vy < 0) you.vy = 0
+    }
+  }
+  you.y = Math.max(0.35, Math.min(18, you.y))
   you.x = Math.max(2, Math.min(480, you.x))
   you.z = Math.max(-WORLD_Z + 1, Math.min(WORLD_Z - 1, you.z))
-  if (!landOk(you.load, you.spent)) {
-    you.x = Math.min(you.x, 66)
-    if (you.x >= 66) you.vx = Math.min(you.vx, 0)
+  pushSolids(w, you)
+  if (!landOk(you.load, you.spent) && isDryLand(you.x, you.z)) {
+    const edge = shoreX(you.z) - 0.2
+    if (!w.shoreWarned) {
+      w.shoreWarned = true
+      w.banner = ashoreNeed()
+      w.bannerT = 6
+      ev.push({ t: 'note', x: you.x, y: you.y, text: 'The shore is closed until you can breathe on land.' })
+    }
+    you.x = Math.min(you.x, edge)
+    you.y = Math.min(you.y, WATER - 0.2)
+    you.vx = Math.min(you.vx, 0)
   }
-  you.region = regionAt(you.x)
+  you.region = regionAt(you.x, you.z)
   tickDots(you, dt, ev)
   you.biteCd = Math.max(0, you.biteCd - dt)
   you.biteT = Math.max(0, you.biteT - dt)
@@ -954,11 +983,11 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     ev.push({ t: 'bite', x: you.x, y: you.y, text: '' })
   }
   if (input.dig) {
-    if (you.x >= 60 && forageNear(w, you, ev)) {
+    if (isDryLand(you.x, you.z) && forageNear(w, you, ev)) {
       /* land gather with dig */
     } else digAt(w, you, dt, ev)
   }
-  if (input.bite && you.x >= 60) forageNear(w, you, ev, 1.8)
+  if (input.bite && isDryLand(you.x, you.z)) forageNear(w, you, ev, 1.8)
   if (input.use) {
     const near = w.nodes.some((n) => n.amount > 0 && Math.abs(n.x - you.x) < 2.2 && Math.abs(you.z) < 2.2)
     if (near) useNode(w, you, ev)
@@ -1211,9 +1240,10 @@ function npcThink(w: World, dt: number, ev: Evt[]): void {
       e.yaw += e.wdir * dt * 0.45
       e.x += Math.cos(e.yaw) * 1.1 * dt
       e.z += Math.sin(e.yaw) * 1.1 * dt
-      if (e.region === 'sea') e.x = Math.max(4, Math.min(e.kind === 'boss' ? 64 : 64, e.x))
-      if (e.region === 'land') e.x = Math.max(70, Math.min(160, e.x))
-      if (e.region === 'volcano') e.x = Math.max(170, Math.min(208, e.x))
+      const edge = shoreX(e.z)
+      if (e.region === 'sea') e.x = Math.max(4, Math.min(edge - 0.6, e.x))
+      if (e.region === 'land') e.x = Math.max(edge + 0.8, Math.min(VOLCANO_X - 2, e.x))
+      if (e.region === 'volcano') e.x = Math.max(VOLCANO_X + 2, Math.min(208, e.x))
       e.z = Math.max(-WORLD_Z + 2, Math.min(WORLD_Z - 2, e.z))
       continue
     }
@@ -1323,9 +1353,10 @@ function npcThink(w: World, dt: number, ev: Evt[]): void {
     const floor = groundAt(e.x, e.z, e.y)
     e.y = e.region === 'sea' ? Math.min(WATER - 0.6, Math.max(floor + 0.8, e.y)) : floor + 0.15
     e.z = Math.max(-WORLD_Z + 2, Math.min(WORLD_Z - 2, e.z))
-    if (e.region === 'sea') e.x = Math.max(4, Math.min(e.kind === 'boss' ? 64 : 60, e.x))
-    if (e.region === 'land') e.x = Math.max(70, Math.min(160, e.x))
-    if (e.region === 'volcano') e.x = Math.max(170, Math.min(208, e.x))
+    const edge = shoreX(e.z)
+    if (e.region === 'sea') e.x = Math.max(4, Math.min(edge - 0.6, e.x))
+    if (e.region === 'land') e.x = Math.max(edge + 0.8, Math.min(VOLCANO_X - 2, e.x))
+    if (e.region === 'volcano') e.x = Math.max(VOLCANO_X + 2, Math.min(208, e.x))
   }
 }
 
@@ -1458,7 +1489,7 @@ function defenses(w: World, base: Base, r: Raider, dt: number, ev: Evt[]): void 
     if (spec.summon) {
       const guards = w.ents.filter((e) => e.kind === 'guard' && e.alive).length
       if (guards < GUARD_CAP) {
-        w.ents.push(make({ id: w.nextId++, kind: 'guard', name: 'Guard', species: 'guard', x: base.x, y: 1.2, region: 'land', bias: 4 }))
+        w.ents.push(make({ id: w.nextId++, kind: 'guard', name: 'Guard', species: 'guard', x: base.x, y: groundAt(base.x, 0, 16) + 0.16, region: 'land', bias: 4 }))
       }
       continue
     }

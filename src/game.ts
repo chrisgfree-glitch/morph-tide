@@ -12,7 +12,7 @@ import { attackVolumes, type HitVol } from '../shared/body'
 import { PREY_TINT, buildCreature, creatureKey, poseCreature, preyInstanceGeo } from './mesh'
 import { ChunkWorld } from './chunks'
 import { buildWater, loadPbr, setTerrainQuality } from './world3d'
-import { WATER, groundAt } from '../shared/terrain'
+import { BEACH_END, WATER, groundAt, shoreX } from '../shared/terrain'
 
 const SAVE = SAVE_KEY
 
@@ -1729,9 +1729,9 @@ export class Game {
     ctx.fillStyle = '#143840'
     ctx.fillRect(0, 0, w, h)
     ctx.fillStyle = '#6d7358'
-    ctx.fillRect(toX(66), 0, w, h)
+    ctx.fillRect(toX(shoreX(0)), 0, w, h)
     ctx.fillStyle = '#d7cbb8'
-    ctx.fillRect(toX(60), 0, Math.max(6, toX(72) - toX(60)), h)
+    ctx.fillRect(toX(shoreX(0) - 8), 0, Math.max(6, toX(BEACH_END) - toX(shoreX(0) - 8)), h)
     ctx.fillStyle = '#1d5560'
     for (const key of this.explored) {
       const [ix, iz] = key.split('|').map(Number)
@@ -1743,7 +1743,7 @@ export class Game {
     ctx.fill()
     ctx.fillStyle = '#d4c4a4'
     ctx.font = '16px sans-serif'
-    ctx.fillText('First shore', toX(76), Math.max(18, toY(-8)))
+    ctx.fillText('First shore', toX(shoreX(0)), Math.max(18, toY(-8)))
   }
 
   private gather(dt: number): Frame {
@@ -1939,9 +1939,9 @@ export class Game {
     this.camera.lookAt(this.lookPos)
     this.camera.updateProjectionMatrix()
     this.sun.position.set(you.x - 10, 18, 12)
-    this.sun.target.position.set(you.x, 1, 0)
+    this.sun.target.position.set(you.x, you.y, 0)
     const fog = this.scene.fog as THREE.Fog
-    const under = this.camera.position.y < WATER && this.camera.position.x < 78
+    const under = this.camera.position.y < WATER
     const zone = you.region
     const fogColor = under
       ? new THREE.Color(0x46c8d0)
@@ -2244,13 +2244,13 @@ export class Game {
       viewS.z += (wantS.z - viewS.z) * sk
       group.userData.viewS = viewS
       group.scale.set(viewS.x, viewS.y, viewS.z)
-      const y = e.kind === 'player' || e.region !== 'sea' ? Math.max(e.y, 1.05) : e.y
+      const y = e.y
       group.userData.baseY = y
       group.userData.yaw = e.yaw
       group.position.set(e.x, y, e.z)
       group.visible = true
       group.userData.landWalk = e.kind === 'player' && e.region !== 'sea' && !!morphFx(morphOf(e.load)).landMove
-      poseCreature(group, this.time + e.salt, Math.abs(e.vx) + Math.abs(e.vy) > 0.25, e.biteT > 0 || e.tele > 0 ? 1 : 0, e.facing)
+      poseCreature(group, this.time + e.salt, Math.hypot(e.vx, e.vz) > 0.3, e.biteT > 0 || e.tele > 0 ? 1 : 0, e.facing)
       if (e.tele > 0) {
         group.userData.teleGlow = true
         const pulse = 0.4 + Math.sin(this.time * 14) * 0.3
@@ -2401,12 +2401,12 @@ export class Game {
       }
     }
     const fightingBoss = this.world.ents.some((e) => e.kind === 'boss' && e.alive && Math.hypot(e.x - you.x, (e.z ?? 0) - you.z) < 24)
-    if (!this.shoreTold && you.x >= 64.5 && !canGoAshore(you.load) && !fightingBoss) {
+    if (!this.shoreTold && you.x >= shoreX(you.z) - 5 && !canGoAshore(you.load) && !fightingBoss) {
       this.shoreTold = true
       this.world.banner = ashoreNeed()
       this.world.bannerT = 6
     }
-    if (!this.shoreTold && canGoAshore(you.load) && you.x >= 60) {
+    if (!this.shoreTold && canGoAshore(you.load) && you.x >= shoreX(you.z) - 8) {
       this.shoreTold = true
       this.world.banner = 'The first shore. Lungs or land limbs let you walk inland.'
       this.world.bannerT = 8

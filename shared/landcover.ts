@@ -2,6 +2,8 @@
  * Pure module: no DOM, no THREE. Chunks and the sim both reuse these placements.
  */
 
+import { WATER, terrainHeight } from './terrain'
+
 export const LAND_TREES = [
   'pine',
   'fir',
@@ -101,14 +103,18 @@ export function scatterChunk(
     const v = hash(seed + i * 3 + 1)
     const x = ox + u * chunk
     const z = oz + v * chunk
-    if (x < 64 && x < 70 && z * z > 0 && x < 62) continue
-    if (x < 60) continue
-    const y = groundAt(x, z, 8)
+    const h = terrainHeight(x, z)
+    if (h < WATER - 0.35) continue
+    const y = groundAt(x, z, 16)
     const id = LAND_TREES[(Math.floor(hash(seed + i * 5) * LAND_TREES.length) + (cx + cz + i) * 3) % LAND_TREES.length]!
-    const shore = x < 76
+    const shore = h < WATER + 1.8
     const prefer = shore ? (i % 3 === 0 ? 'mangrove' : i % 3 === 1 ? 'cypress' : 'palm') : id
-    const kind = x < 72 ? prefer : id
-    const scale = kind === 'redwood' ? 1.6 + u * 0.5 : kind === 'baobab' ? 1.2 + u * 0.3 : kind === 'horsetail' || kind === 'cycad' || kind === 'ferntree' ? 0.8 + u * 0.3 : 0.85 + u * 0.5
+    const kind = shore ? prefer : id
+    const scale =
+      kind === 'redwood' ? 2.8 + u * 0.8
+      : kind === 'baobab' ? 2.4 + u * 0.55
+      : kind === 'horsetail' || kind === 'cycad' || kind === 'ferntree' ? 1.85 + u * 0.5
+      : 2.25 + u * 0.7
     trees.push({ kind, x, y, z, rot: hash(seed + i * 7) * Math.PI * 2, scale })
   }
 
@@ -118,17 +124,17 @@ export function scatterChunk(
     const v = hash(seed + 81 + i * 2)
     const x = ox + u * chunk
     const z = oz + v * chunk
-    if (x < 58) continue
-    const y = groundAt(x, z, 8)
+    if (terrainHeight(x, z) < WATER - 0.4) continue
+    const y = groundAt(x, z, 16)
     const kind = rockKinds[i % 3]!
-    const scale = kind === 'boulder' ? 1.1 + u * 0.8 : kind === 'outcrop' ? 1.2 + u * 0.7 : 0.35 + u * 0.3
+    const scale = kind === 'boulder' ? 1.35 + u * 0.9 : kind === 'outcrop' ? 1.4 + u * 0.8 : 0.4 + u * 0.35
     rocks.push({ kind, x, y, z, rot: v * Math.PI * 2, scale })
-    if (kind === 'pebble') {
-      for (let k = 0; k < 3; k++) {
-        const px = x + (hash(seed + i * 11 + k) - 0.5) * 1.8
-        const pz = z + (hash(seed + i * 13 + k) - 0.5) * 1.8
-        rocks.push({ kind: 'pebble', x: px, y: groundAt(px, pz, 8), z: pz, rot: k, scale: 0.25 + hash(seed + k) * 0.25 })
-      }
+    const debris = kind === 'pebble' ? 4 : density === 'low' ? 2 : 3
+    for (let k = 0; k < debris; k++) {
+      const px = x + (hash(seed + i * 11 + k) - 0.5) * (kind === 'boulder' ? 2.6 : 2.0)
+      const pz = z + (hash(seed + i * 13 + k) - 0.5) * (kind === 'boulder' ? 2.6 : 2.0)
+      if (terrainHeight(px, pz) < WATER - 0.4) continue
+      rocks.push({ kind: 'pebble', x: px, y: groundAt(px, pz, 16), z: pz, rot: k * 1.7, scale: 0.22 + hash(seed + i * 17 + k) * 0.28 })
     }
   }
 
@@ -138,18 +144,48 @@ export function scatterChunk(
     const v = hash(seed + 201 + i * 2)
     const x = ox + u * chunk
     const z = oz + v * chunk
-    if (x < 62) continue
-    const y = groundAt(x, z, 8)
-    plants.push({ kind: plantKinds[i % plantKinds.length]!, x, y, z, rot: v * 6.2, scale: 0.7 + u * 0.6 })
+    if (terrainHeight(x, z) < WATER - 0.2) continue
+    const y = groundAt(x, z, 16)
+    const kind = plantKinds[i % plantKinds.length]!
+    plants.push({ kind, x, y, z, rot: v * 6.2, scale: 0.85 + u * 0.7 })
+    const extras = density === 'low' ? 1 : 2
+    for (let k = 0; k < extras; k++) {
+      const px = x + (hash(seed + i * 23 + k) - 0.5) * 1.6
+      const pz = z + (hash(seed + i * 29 + k) - 0.5) * 1.6
+      if (terrainHeight(px, pz) < WATER - 0.2) continue
+      plants.push({
+        kind: k % 2 ? 'grass' : kind,
+        x: px,
+        y: groundAt(px, pz, 16),
+        z: pz,
+        rot: hash(seed + i * 31 + k) * 6.2,
+        scale: 0.45 + hash(seed + i * 37 + k) * 0.4,
+      })
+    }
   }
   for (let i = 0; i < berryN; i++) {
     const u = hash(seed + 400 + i * 2)
     const v = hash(seed + 401 + i * 2)
     const x = ox + u * chunk
     const z = oz + v * chunk
-    if (x < 64) continue
-    const y = groundAt(x, z, 8)
-    berries.push({ kind: 'berry', x, y, z, rot: v * 4, scale: 0.85 + u * 0.3 })
+    if (terrainHeight(x, z) < WATER + 0.2) continue
+    const y = groundAt(x, z, 16)
+    berries.push({ kind: 'berry', x, y, z, rot: v * 4, scale: 1.05 + u * 0.35 })
   }
   return { trees, rocks, plants, berries }
+}
+
+/** Visual trunk or rock radius at the given instance scale, used for body collision. */
+export function trunkRadius(kind: string, scale: number): number {
+  const base =
+    kind === 'baobab' ? 0.36
+    : kind === 'redwood' ? 0.24
+    : kind === 'cedar' || kind === 'oak' || kind === 'cottonwood' ? 0.16
+    : kind === 'cycad' ? 0.22
+    : kind === 'boulder' ? 0.5
+    : kind === 'outcrop' ? 0.48
+    : kind === 'pebble' ? 0
+    : 0.12
+  if (base <= 0) return 0
+  return Math.max(0.22, base * scale * 0.9)
 }

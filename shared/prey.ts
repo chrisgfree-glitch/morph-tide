@@ -154,7 +154,7 @@ export function createSpawners(): Spawner[] {
     { id: 'hunter', min: 2, max: 4, respawn: 5.5, bloomEvery: 90, bloomN: 2 },
     { id: 'brute', min: 2, max: 4, respawn: 6, bloomEvery: 100, bloomN: 2 },
   ]
-  const landXs = [74, 90, 106, 122, 138, 154]
+  const landXs = [92, 108, 124, 140, 156, 164]
   const landZs = [-64, -32, 0, 32, 64]
   let j = 0
   for (const x of landXs) {

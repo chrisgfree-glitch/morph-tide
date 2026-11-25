@@ -12,6 +12,8 @@ import { applyGameSave, encodeGameSave, parseGameSave, serializeGameSave } from 
 import { BTN, deadzone, readPad, type PadLike } from '../shared/pad'
 import { canPlace, placePiece, refundPiece } from '../shared/build'
 import { bodyBreakPower, cellSeconds, chopSeconds, compute, tierOf } from '../shared/rules'
+import { BEACH_END, LAND_HEIGHT, SEA_END, WATER, isDryLand, shoreX, terrainHeight, groundAt } from '../shared/terrain'
+import { trunkRadius } from '../shared/landcover'
 
 function t7() {
   const load = starterLoad()
@@ -46,7 +48,7 @@ you.air = 400
 you.hp = 400
 you.maxHp = 400
 you.x = 198
-you.y = 1.2
+you.y = groundAt(198, 0, 16) + 0.2
 let deep = false
 for (let i = 0; i < 800 && !deep; i++) {
   const ev = step(world, 0.25, { ax: 0, ay: 0, jump: false, bite: false, dig: true, use: false, ink: false })
@@ -529,10 +531,10 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
   const you = playerOf(w)
   you.spent = 200
   you.x = 80
-  you.y = 1.2
+  you.y = 8.6
   if (landOk(you.load, you.spent)) throw new Error('high spent without lungs or limbs must not go ashore')
   step(w, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
-  if (you.x > 66) throw new Error(`shore must pin at 66 without lungs, got ${you.x}`)
+  if (you.x > shoreX(you.z) + 0.4) throw new Error(`shore must stop a water-only creature at the waterline, got ${you.x} shore=${shoreX(you.z)}`)
   if (!w.shoreWarned || !/lungs|land limbs/i.test(w.banner)) throw new Error(`shore should say lungs or land limbs, got "${w.banner}"`)
   if (w.bossUnlocked || w.ents.some((e) => e.kind === 'boss')) throw new Error('lungs/land must not be the level 1 boss gate')
   you.ep = 20
@@ -577,7 +579,7 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
   you.y = boss.y
   you.z = boss.z
   step(w, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
-  if (you.x > 66) throw new Error('reaching the shallows boss must not require crossing the land pin')
+  if (isDryLand(you.x, you.z)) throw new Error('reaching the shallows boss must not require leaving the water')
   const hp0 = boss.hp
   you.x = boss.x - 1.6
   you.y = boss.y
@@ -644,3 +646,87 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
 
 
 console.log('all checks ok')
+
+{
+  if (terrainHeight(20, 0) >= WATER - 0.5) throw new Error(`ocean floor should sit well under the water, got ${terrainHeight(20, 0)}`)
+  if (terrainHeight(58, 0) >= WATER - 0.8) throw new Error(`boss shallows must stay underwater, got ${terrainHeight(58, 0)}`)
+  if (terrainHeight(120, 0) <= WATER + 1.2) throw new Error(`land plateau should rise above the water, got ${terrainHeight(120, 0)} vs WATER ${WATER}`)
+  const sx = shoreX(0)
+  if (sx < SEA_END + 4 || sx > BEACH_END - 2) throw new Error(`shoreline should fall on the beach ramp, got ${sx}`)
+  if (LAND_HEIGHT <= WATER) throw new Error('land plateau constant must be above the water line')
+  console.log('raised land plateau and beach shoreline')
+}
+
+{
+  const w = createWorld()
+  const you = playerOf(w)
+  you.x = 50
+  you.y = 2.6
+  you.z = 0
+  you.vx = 0
+  for (let i = 0; i < 80; i++) step(w, 0.16, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
+  if (you.x < 68) throw new Error(`swimmer should cross the old x=66 wall while still in the water, got x=${you.x}`)
+  if (isDryLand(you.x, you.z)) throw new Error(`water-only swimmer should not walk onto dry land, got x=${you.x}`)
+  if (you.x > 478) throw new Error('swimmer escaped the world edge')
+  console.log('free swim past the old mid-ocean wall')
+}
+
+{
+  const w = createWorld()
+  const you = playerOf(w)
+  you.ep = 20
+  const buy = applyMorphBuy(you, 'lungs')
+  if (!buy.ok) throw new Error(`lungs for land walk: ${buy.reason}`)
+  you.x = 70
+  you.y = 3.2
+  you.z = 0
+  for (let i = 0; i < 100; i++) step(w, 0.16, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
+  if (you.x < BEACH_END - 2) throw new Error(`evolved creature should walk up the beach onto the plateau, got x=${you.x}`)
+  if (you.y <= WATER) throw new Error(`walker should stand above the water on the plateau, got y=${you.y}`)
+  if (!isDryLand(you.x, you.z)) throw new Error('walker should be on dry land')
+  console.log('landOk walker climbs the beach onto the raised plateau')
+}
+
+{
+  const w = createWorld()
+  const you = playerOf(w)
+  you.ep = 20
+  applyMorphBuy(you, 'lungs')
+  you.x = 110
+  you.z = 0
+  you.y = groundAt(110, 0, 16) + 0.2
+  you.vx = 0
+  you.vy = 0
+  you.vz = 0
+  const samples: number[] = []
+  for (let i = 0; i < 90; i++) {
+    step(w, 1 / 30, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 0 })
+    if (i > 20) samples.push(you.y)
+  }
+  const span = Math.max(...samples) - Math.min(...samples)
+  if (span > 0.06) throw new Error(`idle avatar should not bounce on land, y span ${span.toFixed(3)}`)
+  you.x = 24
+  you.y = groundAt(24, 0, 16) + 0.45
+  you.z = 0
+  you.vx = 0
+  you.vy = 0
+  you.vz = 0
+  for (let i = 0; i < 45; i++) step(w, 1 / 30, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 0 })
+  const swim: number[] = []
+  for (let i = 0; i < 90; i++) {
+    step(w, 1 / 30, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 0 })
+    swim.push(you.y)
+  }
+  const swimSpan = Math.max(...swim) - Math.min(...swim)
+  if (swimSpan > 0.12) throw new Error(`idle swimmer should settle, not bounce, y span ${swimSpan.toFixed(3)}`)
+  console.log('idle avatar stays settled on land and in the water')
+}
+
+{
+  const big = ['redwood', 'oak', 'pine', 'baobab', 'palm']
+  for (const kind of big) {
+    const r = trunkRadius(kind, 2.4)
+    if (r < 0.22) throw new Error(`${kind} collider should match the larger trunk, got ${r}`)
+  }
+  console.log('larger tree colliders')
+}

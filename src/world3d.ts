@@ -19,7 +19,7 @@ export function buildTerrain(quality: 'high' | 'low'): THREE.Mesh {
   for (let i = 0; i < pos.count; i++) {
     const h = pos.getY(i)
     const x = pos.getX(i)
-    tint.set(x > 168 ? 0x6a4638 : h < 0.9 ? 0xb7a488 : h < 1.5 ? 0x6d8458 : 0x6e6862)
+    tint.set(x > 168 ? 0x6a4638 : h < 4.8 ? 0xb7a488 : h < 7.2 ? 0xc4b48a : 0x6d8458)
     colors[i * 3] = tint.r
     colors[i * 3 + 1] = tint.g
     colors[i * 3 + 2] = tint.b
@@ -91,9 +91,9 @@ function terrainMat(): THREE.ShaderMaterial {
         vec3 grass = tri_x(uGrassC, p, n, sc * 0.9);
         vec3 rock = tri_x(uRockC, p, n, sc * 0.7);
         vec3 lava = tri_x(uLavaC, p, n, sc * 0.6);
-        float sandW = smoothstep(2.4, 0.35, vWorld.y) * (1.0 - smoothstep(70.0, 82.0, vWorld.x));
-        float mudW = sandW * smoothstep(1.1, 0.15, vWorld.y);
-        sandW *= 1.0 - mudW;
+        float under = 1.0 - smoothstep(5.15, 5.85, vWorld.y);
+        float sandW = smoothstep(4.2, 5.4, vWorld.y) * (1.0 - smoothstep(6.7, 7.9, vWorld.y)) * (1.0 - smoothstep(160.0, 172.0, vWorld.x));
+        float mudW = under * (1.0 - sandW);
         float lavaW = smoothstep(162.0, 176.0, vWorld.x);
         float rockW = clamp(smoothstep(0.22, 0.72, slope) + lavaW * 0.35, 0.0, 1.0) * (1.0 - sandW * 0.85);
         float moss = tri_x(uDetail, p, n, sc * 1.4).g;
@@ -114,7 +114,7 @@ function terrainMat(): THREE.ShaderMaterial {
         vec3 worldN = normalize(n + nTex * 0.55);
         vec3 L = normalize(vec3(-0.45, 0.86, 0.25));
         float ndl = max(dot(worldN, L), 0.0);
-        float cave = smoothstep(5.6, 0.4, vWorld.y) * (1.0 - smoothstep(70.0, 84.0, vWorld.x));
+        float cave = under;
         float caust = pow(max(sin(vWorld.x * 0.85 + uTime * 1.3) * sin(vWorld.z * 0.62 - uTime), 0.0), 2.0);
         vec3 wet = vec3(0.32, 0.52, 0.5);
         albedo = mix(albedo, albedo * wet, cave * 0.82);
@@ -130,10 +130,10 @@ function terrainMat(): THREE.ShaderMaterial {
 }
 
 export function buildWater(time: { value: number }): THREE.Mesh {
-  const geo = new THREE.PlaneGeometry(86, WORLD_Z * 2, 48, 24)
+  const geo = new THREE.PlaneGeometry(96, WORLD_Z * 2, 48, 24)
   geo.rotateX(-Math.PI / 2)
   const mesh = new THREE.Mesh(geo, waterMat(time))
-  mesh.position.set(40, WATER, 0)
+  mesh.position.set(36, WATER, 0)
   mesh.name = 'water'
   return mesh
 }
@@ -172,7 +172,7 @@ function waterMat(time: { value: number }): THREE.ShaderMaterial {
         float fres = pow(1.0 - max(dot(n, V), 0.0), 3.0);
         vec3 deep = vec3(0.08, 0.52, 0.56);
         vec3 shallow = vec3(0.22, 0.74, 0.72);
-        float shore = smoothstep(20.0, 70.0, vWorld.x);
+        float shore = smoothstep(20.0, 76.0, vWorld.x);
         vec3 refr = mix(deep, shallow, shore);
         vec3 sky = vec3(0.48, 0.88, 0.90);
         float below = step(cameraPosition.y, vWorld.y);

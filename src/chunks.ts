@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { CHUNK, WORLD_Z, dirtyChunks, groundAt } from '../shared/terrain'
+import { CHUNK, WATER, WORLD_Z, dirtyChunks, groundAt } from '../shared/terrain'
 import { buildLandFlora } from './landflora'
 
 /** Smooth heightfield for one chunk. Digs and caves change the surface through groundAt. */
@@ -151,7 +151,7 @@ export class ChunkWorld {
         const bucket = buckets[seed]!
         const x = px + ((i * 1.15 + c * 0.4) % 3.2) - 1.4
         const z = pz + ((i * 0.9 + c * 0.55) % 2.6) - 1.1
-        const y = groundAt(x, z, 6)
+        const y = groundAt(x, z, 16)
         const s = (cx === 0 && cz === 0 && c < 3 ? 0.7 : 0.42) + ((c * 5 + i * 3) % 7) * 0.2
         dummy.position.set(x, y - s * 0.2, z)
         dummy.rotation.set(0.12 * ((i % 5) - 2), c * 1.17 + i * 0.83, 0.16 * ((i % 4) - 1.5))
@@ -162,7 +162,7 @@ export class ChunkWorld {
         )
         dummy.updateMatrix()
         bucket.mesh.setMatrixAt(bucket.n, dummy.matrix)
-        const wet = x < 72 ? 1 : 0
+        const wet = groundAt(x, z, 16) < WATER ? 1 : 0
         const tone = (c * 7 + i * 13) % 5
         if (tone === 0) moss.setRGB(0.58 + wet * 0.06, 0.74 + wet * 0.08, 0.5)
         else if (tone === 1) moss.setRGB(0.66, 0.78 + wet * 0.06, 0.54)
@@ -228,7 +228,7 @@ export class ChunkWorld {
           const x = px + ((i * 7 + kind * 3) % 9) * 0.45 - 1.8
           const z = pz + ((i * 5 + kind * 2) % 7) * 0.4 - 1.2
           if (x > 70) continue
-          const y = groundAt(x, z, 6)
+          const y = groundAt(x, z, 16)
           const h = (this.quality === 'low' ? 1.15 : 1.45) + (i % 5) * 0.28 + kind * 0.18
           dummy.position.set(x, y, z)
           dummy.rotation.y = i * 0.73 + kind * 0.4
@@ -281,12 +281,11 @@ export class ChunkWorld {
     for (let p = 0; p < patches; p++) {
       const px = cx * CHUNK + ((p * 23) % (CHUNK * 2)) - CHUNK * 0.4
       const pz = cz * CHUNK + ((p * 17) % (CHUNK * 2)) - CHUNK * 0.5
-      const sea = px < 74
-      if (sea) continue
+      if (groundAt(px, pz, 16) < WATER - 0.15) continue
       for (let i = 0; i < per; i++) {
         const x = px + ((i * 5) % 7) - 3
         const z = pz + ((i * 3) % 5) - 2
-        const y = groundAt(x, z, 6)
+        const y = groundAt(x, z, 16)
         const h = 0.45 + (i % 4) * 0.18
         dummy.position.set(x, y, z)
         dummy.rotation.y = i * 0.9

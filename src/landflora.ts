@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { CHUNK, groundAt } from '../shared/terrain'
+import { CHUNK, SEA_END, groundAt } from '../shared/terrain'
 import { LAND_TREES, scatterChunk, type LandTreeId, type Spot } from '../shared/landcover'
 
 const TMP = new THREE.Object3D()
@@ -67,14 +67,18 @@ const cone = (r: number, h: number, seg = 5) => new THREE.ConeGeometry(r, h, seg
 const sph = (r: number, seg = 6) => new THREE.SphereGeometry(r, seg, seg - 1)
 
 function coneTree(bark: number, leaf: number, layers: number, slim: number, droop: number): THREE.BufferGeometry {
-  const parts: Parameters<typeof merge>[0] = [{ geo: cyl(0.08 * slim, 0.14, 1.1, 5), y: 0.55, color: bark }]
+  const parts: Parameters<typeof merge>[0] = [
+    { geo: cyl(0.12 * slim, 0.2, 2.2, 6), y: 1.1, color: bark },
+    { geo: cyl(0.2, 0.26, 0.22, 6), y: 0.1, color: bark },
+  ]
   for (let i = 0; i < layers; i++) {
     const t = i / Math.max(1, layers - 1)
+    const leafB = i % 2 ? leaf : leaf + 0x102010
     parts.push({
-      geo: cone(0.55 - t * 0.32, 0.7 - t * 0.12, 6),
-      y: 0.85 + i * (0.42 - droop * 0.08),
+      geo: cone(0.85 - t * 0.48, 1.15 - t * 0.18, 7),
+      y: 1.55 + i * (0.7 - droop * 0.1),
       sy: 1 + droop * 0.2,
-      color: leaf,
+      color: leafB,
     })
   }
   return merge(parts)
@@ -82,9 +86,12 @@ function coneTree(bark: number, leaf: number, layers: number, slim: number, droo
 
 function roundTree(bark: number, leaf: number, trunkH: number, canopy: number, wide: number): THREE.BufferGeometry {
   return merge([
-    { geo: cyl(0.1, 0.16, trunkH, 5), y: trunkH / 2, color: bark },
+    { geo: cyl(0.14, 0.22, trunkH, 6), y: trunkH / 2, color: bark },
+    { geo: cyl(0.22, 0.28, 0.22, 6), y: 0.1, color: bark },
     { geo: sph(canopy, 7), y: trunkH + canopy * 0.15, sx: wide, sy: 0.85, sz: wide, color: leaf },
-    { geo: sph(canopy * 0.7, 6), y: trunkH + canopy * 0.45, x: 0.25, sx: 0.8, color: leaf },
+    { geo: sph(canopy * 0.72, 6), y: trunkH + canopy * 0.5, x: 0.32, sx: 0.85, color: leaf + 0x0c1808 },
+    { geo: sph(canopy * 0.62, 6), y: trunkH + canopy * 0.42, x: -0.28, z: 0.18, color: leaf },
+    { geo: cyl(0.05, 0.07, canopy * 0.7, 4), y: trunkH + canopy * 0.2, x: 0.28, rz: -0.7, color: bark },
   ])
 }
 
@@ -211,66 +218,90 @@ const TREE_GEO: Record<LandTreeId, () => THREE.BufferGeometry> = {
 }
 
 function rockGeo(kind: string): THREE.BufferGeometry {
-  if (kind === 'outcrop') {
-    const g = new THREE.BoxGeometry(1.2, 0.55, 0.8)
+  const paint = (g: THREE.BufferGeometry, a: number, b: number) => {
     const pos = g.getAttribute('position') as THREE.BufferAttribute
+    const colors = new Float32Array(pos.count * 3)
+    const ca = new THREE.Color(a)
+    const cb = new THREE.Color(b)
     for (let i = 0; i < pos.count; i++) {
-      pos.setXYZ(i, pos.getX(i) + (i % 3) * 0.05, pos.getY(i) * (i % 2 ? 1.15 : 0.85), pos.getZ(i) + ((i * 3) % 5) * 0.04)
+      const t = ((i * 17) % 11) / 11
+      const c = ca.clone().lerp(cb, t)
+      colors[i * 3] = c.r
+      colors[i * 3 + 1] = c.g
+      colors[i * 3 + 2] = c.b
+      const s = 0.82 + ((i * 13) % 9) * 0.035
+      pos.setXYZ(i, pos.getX(i) * s, pos.getY(i) * (0.7 + ((i * 5) % 7) * 0.05), pos.getZ(i) * s)
     }
+    g.setAttribute('color', new THREE.BufferAttribute(colors, 3))
     g.computeVertexNormals()
     return g
   }
-  if (kind === 'pebble') return new THREE.SphereGeometry(0.22, 6, 5)
-  const g = new THREE.IcosahedronGeometry(0.55, 1)
-  const pos = g.getAttribute('position') as THREE.BufferAttribute
-  for (let i = 0; i < pos.count; i++) {
-    const s = 0.75 + ((i * 13) % 7) * 0.05
-    pos.setXYZ(i, pos.getX(i) * s, pos.getY(i) * s * 0.72, pos.getZ(i) * s)
+  if (kind === 'outcrop') {
+    return merge([
+      { geo: paint(new THREE.BoxGeometry(1.35, 0.7, 0.95), 0x8a8476, 0x6a6458), y: 0.1, color: 0x8a8476 },
+      { geo: paint(new THREE.BoxGeometry(0.7, 0.45, 0.6), 0x7a7468, 0x5a564c), x: 0.4, y: 0.28, z: 0.1, ry: 0.4, color: 0x7a7468 },
+      { geo: paint(new THREE.IcosahedronGeometry(0.22, 0), 0x9a9588, 0x7a766c), x: -0.45, y: 0.08, z: 0.28, color: 0x9a9588 },
+    ])
   }
-  g.computeVertexNormals()
-  return g
+  if (kind === 'pebble') {
+    const g = new THREE.IcosahedronGeometry(0.24, 1)
+    return paint(g, 0xa39e90, 0x7a766c)
+  }
+  return merge([
+    { geo: paint(new THREE.IcosahedronGeometry(0.62, 1), 0x8e8a7c, 0x6a665c), color: 0x8e8a7c },
+    { geo: paint(new THREE.IcosahedronGeometry(0.28, 0), 0x9a9588, 0x706c62), x: 0.42, y: -0.12, z: 0.18, color: 0x9a9588 },
+    { geo: paint(new THREE.IcosahedronGeometry(0.18, 0), 0x7a766c, 0x5c5850), x: -0.38, y: -0.16, z: -0.12, color: 0x7a766c },
+  ])
 }
 
 function plantGeo(kind: string): THREE.BufferGeometry {
   if (kind === 'fern') {
     return merge(
-      [0, 1, 2, 3, 4].map((i) => ({
-        geo: new THREE.ConeGeometry(0.18, 0.55, 4),
-        y: 0.2,
-        ry: (i / 5) * Math.PI * 2,
-        rz: 0.7,
-        color: 0x3a7a38,
+      [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({
+        geo: new THREE.ConeGeometry(0.16, 0.7, 4),
+        y: 0.28,
+        ry: (i / 8) * Math.PI * 2,
+        rz: 0.55 + (i % 3) * 0.12,
+        x: Math.cos((i / 8) * Math.PI * 2) * 0.08,
+        z: Math.sin((i / 8) * Math.PI * 2) * 0.08,
+        color: i % 2 ? 0x3a7a38 : 0x2e6a30,
       })),
     )
   }
   if (kind === 'shrub') {
     return merge([
-      { geo: sph(0.28, 5), y: 0.25, sx: 1.2, sy: 0.8, color: 0x3a6a30 },
-      { geo: sph(0.2, 5), y: 0.32, x: 0.16, color: 0x4a7a38 },
+      { geo: cyl(0.04, 0.06, 0.22, 4), y: 0.1, color: 0x4a3a22 },
+      { geo: sph(0.32, 6), y: 0.34, sx: 1.25, sy: 0.85, color: 0x3a6a30 },
+      { geo: sph(0.22, 5), y: 0.42, x: 0.18, color: 0x4a7a38 },
+      { geo: sph(0.18, 5), y: 0.38, x: -0.16, z: 0.12, color: 0x2e5a28 },
     ])
   }
   if (kind === 'berry') {
     return merge([
-      { geo: sph(0.28, 5), y: 0.28, sx: 1.15, sy: 0.9, color: 0x2e6a32 },
-      { geo: sph(0.06, 5), y: 0.4, x: 0.14, color: 0xc42848 },
-      { geo: sph(0.06, 5), y: 0.36, x: -0.12, z: 0.1, color: 0xc42848 },
-      { geo: sph(0.055, 5), y: 0.46, z: -0.1, color: 0xd44060 },
-      { geo: sph(0.05, 5), y: 0.5, x: 0.06, color: 0xe85070 },
+      { geo: cyl(0.04, 0.06, 0.2, 4), y: 0.1, color: 0x4a3a22 },
+      { geo: sph(0.32, 6), y: 0.34, sx: 1.2, sy: 0.95, color: 0x2e6a32 },
+      { geo: sph(0.2, 5), y: 0.42, x: 0.16, color: 0x3a7a38 },
+      { geo: sph(0.07, 5), y: 0.48, x: 0.16, color: 0xc42848 },
+      { geo: sph(0.065, 5), y: 0.44, x: -0.14, z: 0.12, color: 0xc42848 },
+      { geo: sph(0.06, 5), y: 0.54, z: -0.12, color: 0xd44060 },
+      { geo: sph(0.055, 5), y: 0.58, x: 0.06, color: 0xe85070 },
+      { geo: sph(0.05, 5), y: 0.4, x: -0.08, z: -0.14, color: 0xb02040 },
     ])
   }
-  // grass tuft
   return merge(
-    [0, 1, 2, 3].map((i) => ({
-      geo: new THREE.ConeGeometry(0.05, 0.45, 3),
-      y: 0.22,
-      ry: (i / 4) * Math.PI * 2,
-      rz: 0.15 * (i % 2 ? 1 : -1),
-      color: 0x6a8a3a,
+    [0, 1, 2, 3, 4, 5, 6].map((i) => ({
+      geo: new THREE.ConeGeometry(0.045, 0.55 + (i % 3) * 0.12, 3),
+      y: 0.26,
+      ry: (i / 7) * Math.PI * 2,
+      rz: 0.12 * (i % 2 ? 1 : -1),
+      x: Math.cos((i / 7) * Math.PI * 2) * 0.06,
+      z: Math.sin((i / 7) * Math.PI * 2) * 0.06,
+      color: i % 2 ? 0x6a8a3a : 0x5a7a30,
     })),
   )
 }
 
-const TREE_GEOS = Object.fromEntries(LAND_TREES.map((id) => [id, TREE_GEO[id]()])) as Record<LandTreeId, THREE.BufferGeometry>
+const TREE_GEOS = Object.fromEntries(LAND_TREES.map((id) => [id, TREE_GEO[id]().scale(2.05, 2.05, 2.05)])) as Record<LandTreeId, THREE.BufferGeometry>
 const ROCK_GEOS = { boulder: rockGeo('boulder'), outcrop: rockGeo('outcrop'), pebble: rockGeo('pebble') }
 const PLANT_GEOS = { fern: plantGeo('fern'), grass: plantGeo('grass'), shrub: plantGeo('shrub'), berry: plantGeo('berry') }
 
@@ -289,19 +320,25 @@ function instanced(geo: THREE.BufferGeometry, color: number, cap: number, vertex
   return mesh
 }
 
+const TINT = new THREE.Color()
 function place(mesh: THREE.InstancedMesh, n: number, s: Spot, yOff = 0, extraScale = 1): number {
   TMP.position.set(s.x, s.y + yOff, s.z)
-  TMP.rotation.set(0, s.rot, 0)
-  TMP.scale.setScalar(s.scale * extraScale)
+  TMP.rotation.set((s.rot % 1) * 0.08, s.rot, 0)
+  const stretch = 0.92 + (Math.abs(s.x * 12.9898 + s.z * 78.233) % 1) * 0.16
+  TMP.scale.set(s.scale * extraScale * (0.96 + (s.rot % 1) * 0.08), s.scale * extraScale * stretch, s.scale * extraScale)
   TMP.updateMatrix()
   mesh.setMatrixAt(n, TMP.matrix)
+  const hue = ((s.x * 3.1 + s.z * 5.7 + s.rot) % 1) * 0.08 - 0.04
+  const lit = ((s.x * 1.7 + s.z * 2.3) % 1) * 0.14 - 0.07
+  TINT.setHSL(0.08 + hue, 0.12, 0.55 + lit)
+  mesh.setColorAt(n, TINT)
   return n + 1
 }
 
 /** Instanced land trees, rocks and plants for one chunk. Caller must dispose previous. */
 export function buildLandFlora(cx: number, cz: number, quality: 'high' | 'mid' | 'low', group: THREE.Group, bucket: THREE.Object3D[]): void {
   const ox = cx * CHUNK
-  if (ox + CHUNK < 58) return
+  if (ox + CHUNK < SEA_END) return
   const scatter = scatterChunk(cx, cz, CHUNK, groundAt, quality)
   for (const id of LAND_TREES) {
     const spots = scatter.trees.filter((s) => s.kind === id)
@@ -311,6 +348,7 @@ export function buildLandFlora(cx: number, cz: number, quality: 'high' | 'mid' |
     for (const s of spots) n = place(mesh, n, s, 0, 1)
     mesh.count = n
     mesh.instanceMatrix.needsUpdate = true
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
     group.add(mesh)
     bucket.push(mesh)
   }
@@ -318,11 +356,12 @@ export function buildLandFlora(cx: number, cz: number, quality: 'high' | 'mid' |
   for (const kind of ['boulder', 'outcrop', 'pebble'] as const) {
     const spots = scatter.rocks.filter((s) => s.kind === kind)
     if (!spots.length) continue
-    const mesh = instanced(ROCK_GEOS[kind], rockColors[kind]!, Math.max(spots.length, 1))
+    const mesh = instanced(ROCK_GEOS[kind], rockColors[kind]!, Math.max(spots.length, 1), true)
     let n = 0
     for (const s of spots) n = place(mesh, n, s, kind === 'outcrop' ? 0.1 : 0.05, 1)
     mesh.count = n
     mesh.instanceMatrix.needsUpdate = true
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
     group.add(mesh)
     bucket.push(mesh)
   }
@@ -339,6 +378,7 @@ export function buildLandFlora(cx: number, cz: number, quality: 'high' | 'mid' |
     for (const s of spots) n = place(mesh, n, s, 0, 1)
     mesh.count = n
     mesh.instanceMatrix.needsUpdate = true
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
     group.add(mesh)
     bucket.push(mesh)
   }

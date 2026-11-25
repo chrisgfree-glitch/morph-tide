@@ -2,7 +2,7 @@
  * Pure module: no DOM, no THREE. Eating restores HP only — never EP.
  */
 
-import { WATER, groundAt } from './terrain'
+import { BEACH_END, WATER, groundAt } from './terrain'
 
 export interface HealPlant {
   id: number
@@ -23,13 +23,13 @@ export function createHealPlants(): HealPlant[] {
   const out: HealPlant[] = []
   let id = 1
   // Spread a visible lattice across the whole seafloor, with jitter so it doesn't look gridded.
-  for (let x = 3; x <= 64; x += 7) {
+  for (let x = 3; x <= 70; x += 7) {
     for (let z = -78; z <= 78; z += 8) {
       const jx = ((id * 13) % 7) - 3
       const jz = ((id * 19) % 7) - 3
       const px = x + jx * 0.7
       const pz = z + jz * 0.7
-      const gy = groundAt(px, pz, 8)
+      const gy = groundAt(px, pz, 16)
       if (gy >= WATER - 0.35) continue
       const period = 9 + (id % 6)
       out.push({
@@ -45,13 +45,13 @@ export function createHealPlants(): HealPlant[] {
       })
     }
   }
-  for (let x = 68; x <= 160; x += 9) {
+  for (let x = BEACH_END; x <= 160; x += 9) {
     for (let z = -76; z <= 76; z += 11) {
       const jx = ((id * 11) % 7) - 3
       const jz = ((id * 17) % 7) - 3
       const px = x + jx * 0.8
       const pz = z + jz * 0.8
-      const gy = groundAt(px, pz, 8)
+      const gy = groundAt(px, pz, 16)
       const period = 10 + (id % 7)
       out.push({
         id: id++,
