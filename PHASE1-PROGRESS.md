@@ -542,3 +542,78 @@ until tier 3); WCAG contrast.
 Known issues / leftover: some kelp blades still read dark edge-on under
 SwiftShader; a first eat can take a few nips (guppy bite 2 vs fry HP 5);
 `20b4663` lighting is still absent from this repo and was not imported.
+
+## Pad, touch overlap, kelp, and first-meal pass (5:11 PM PT)
+
+Chris approved in chat at 4:53–4:59 PM PT and asked to push live. Branch
+`coding-guy/pad-touch` from then-current `main` (`81eeb8d`). A later phone
+redesign (top row removed, UI reduced to Select, Pause, and up/down) is
+planned; this pass only stopped touch overlaps and did not build a new
+control system.
+
+### What changed
+
+Xbox / standard Gamepad mapping is centralized in `shared/pad.ts` with stick
+deadzones. RT bites, LT boosts (sprint), Start opens Pause, and View opens
+Select (even if Pause had the Select flag set). B still leaves build without
+dashing, D-pad Left opens Evolve, and D-pad Up/Down rotate in build. Menus
+(including Evolve buttons) navigate with the D-pad or left stick and confirm
+with A. Connect and disconnect show an on-screen prompt, in-game button
+labels stay visible while a pad is in use, and Pause has a Controller help
+screen listing the layout.
+
+Phone buttons in the bottom-right are spaced around Attack (56px+ targets,
+safe-area insets) so Dig, Dash, Dive, and Attack no longer overlap. Dig
+stays hidden until it unlocks; Dive hides on land. A one-finger drag on
+empty screen orbits the camera by pointer id, works while the other thumb
+holds the stick, and pauses auto-follow while dragging and briefly after.
+Growing from guppy to steelhead no longer snaps the camera; orbit distance
+stays consistent and body scale eases.
+
+Nearby fry take 1–2 guppy bites (fry HP 3, early bite cap 3). Mid-game prey
+are unchanged. Kelp uses brighter fill, wrap lighting, and slightly wider
+blades so they stay green edge-on.
+
+Commit `20b4663` was checked again on this repo, GitHub
+`chrisgfree-glitch/evo-back-to-eden`, and other git trees on the box. It is
+still not present, so it was not imported.
+
+### Preview and production
+
+`npm run check` and `npm run build` passed, including standard pad unit tests
+(mocked buttons/axes) and a first-meal 1–2 bite test. Preview (target
+omitted) of `3188eea`: `dpl_Cd2tqGVAYgT4PnZVRq2wKVnHdEia`,
+https://evo-back-to-eden-ko67rw6v7-chrisgfree-5870.vercel.app
+(earlier preview of `f4346b7` was `dpl_GzrxQpJmLALG4hrPJeDhCXC5enbH`).
+
+`main` was fast-forwarded and a production deployment was created with
+`target: "production"` of the same commit. Ready at 5:11 PM PT. Env vars,
+protection, domains, and secrets were not changed.
+
+- Production URL: https://evo-back-to-eden.vercel.app/
+- Also: https://evo-back-to-eden-chrisgfree-5870.vercel.app
+- Deployment id: `dpl_BoQjoshkKweDZJpUd29onVgf1Kmv`
+- Commit: `3188eea` (`3188eeab68ac03a171d9fab0a2eccbe586b975c3`)
+
+Playwright (Chrome + SwiftShader, fake Gamepad + touch emulation) at
+1280×800, 844×390, 1024×473, and 390×844 against the preview, then
+production: Start/View, build B/rotate, unscripted-style early eat, lock and
+dash, camera consistency, touch overlap and 56px targets, contextual Dig/Dive,
+and one-finger look drag with a second pointer on the stick. All phone sizes
+passed both times. Desktop path A (eat) failed after the pad sequence in both
+preview and production; the same path passed at every phone size, and the
+unit test lands an unassisted guppy bite.
+
+Preview screenshots: `smoke/r7b-desktop-*.png`, `smoke/r7b-phone-land-*.png`,
+`smoke/r7b-phone-chris-*.png`, `smoke/r7b-phone-port-*.png`.
+Production screenshots: `smoke/r7-prod-desktop-*.png`,
+`smoke/r7-prod-phone-land-*.png`, `smoke/r7-prod-phone-chris-*.png`,
+`smoke/r7-prod-phone-port-*.png`.
+
+Not verified: a physical Xbox pad or Chris's physical phone; first-minutes
+dig (still locked until tier 3); WCAG contrast.
+
+Known issues / leftover: a planned later touch-control redesign (top row
+removed, UI reduced to Select, Pause, and up/down) is not in this pass;
+some kelp edges can still thin out at very sharp angles; `20b4663` lighting
+is still absent.
