@@ -418,3 +418,65 @@ Known issues / leftover:
 - `20b4663` lighting was skipped (not on GitHub or in this repo).
 - Decay, raids, the Apocalypse Tracker, and Cloudflare server deploys were
   not in this pass.
+
+
+## Controls fix (Nov 24, 2026)
+
+Chris approved this pass at 4:02 PM PT and asked to push it live. Worked on
+`coding-guy/controls-fix` from current `main` (`64c7466`). Claude's review
+called out overlapping build/evolve/dash/Esc bindings, missing pad/touch
+evolve and rotate, browser key/context-menu theft, and refund/save checks.
+
+### What changed
+
+New control map:
+
+- Keyboard: WASD move, mouse/right-drag orbit, scroll zoom, click bite, Shift
+  sprint, Space jump, C dive, F dig, B build, Tab lock, E evolve, Q dash, Esc
+  menu. In build, Q/E rotate and Esc or B leave — E does not evolve and Q does
+  not dash.
+- Controller: LS move, RS orbit, RT bite, LT horn, A jump, B dash (B leaves
+  build and does not dash until you are out of it), X dig, Y build, D-pad Left
+  evolve, D-pad U/D rotate in build, LB/RB or D-pad L/R cycle pieces in build,
+  L3 sprint, R3 lock, Start menu, Back map.
+- Touch: existing stick/orbs, plus a 44px Evolve button in the HUD corner on
+  short/phone layouts (85×44 at 844×390, no overlap with Grow).
+
+Esc closes Evolve, Quit, Pause, the map, or build first; a later Esc opens
+Select. Game keys (Tab, Space, arrows, and the other play keys) and right-click
+call preventDefault while playing, but not when a text input, textarea, or
+select is focused.
+
+Pickup refunds a piece's materials and does not grant a free replacement (that
+had been a duplicate-materials bug). The refunded bag and empty slot survive
+`evo2.eden.v2` save/load. Unit tests cover this.
+
+### Preview and production
+
+`npm run check` and `npm run build` passed. Preview (target omitted) of
+`19a7ce5`: `dpl_6Rp91SSghv7ic5REgeXTGkcBZvdn`,
+https://evo-back-to-eden-c6pkioz7n-chrisgfree-5870.vercel.app
+
+`main` was fast-forwarded and a production deployment was created with
+`target: "production"` of the same commit. Ready at 4:10 PM PT. Env vars,
+protection, domains, and secrets were not changed.
+
+- Production URL: https://evo-back-to-eden.vercel.app/
+- Also: https://evo-back-to-eden-chrisgfree-5870.vercel.app
+- Deployment id: `dpl_GTHFbFMpkdHbVVFjyfPC3dtgtxLb`
+- Commit: `19a7ce5` (`19a7ce53cf139294ef850b93332c7e0bc62d171a`)
+
+Playwright (Chrome + SwiftShader) at 1280×800 and 844×390 against the preview,
+then the same against production: build-mode E/Q, Esc chain, pad B / D-pad
+evolve / D-pad rotate, touch Evolve at 844×390, preventDefault, refunds and
+save/load, and the three key paths all passed both sizes both times.
+
+Preview screenshots: `smoke/r5-desktop-*.png`, `smoke/r5-phone-land-*.png`.
+Production screenshots: `smoke/r5-prod-desktop-*.png`, `smoke/r5-prod-phone-land-*.png`.
+
+Not verified: a physical Xbox pad or phone; unassisted early bites; WCAG
+contrast.
+
+Known issues / leftover: the first-run hint can still say “tiny guppy” after
+loading a mid-game save in a clean profile; some rock faces still read dark
+under SwiftShader; unassisted start-of-game bites can still miss.
