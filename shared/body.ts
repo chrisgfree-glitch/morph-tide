@@ -1,5 +1,6 @@
 import type { Loadout } from './catalog'
 import { hornById, jawById } from './catalog'
+import { morphOf } from './evolve'
 import { tierOf } from './rules'
 
 /** Visual scale. A tier-1 swimmer is about 55% of the old 1.27 body, then grows with tier and size. */
@@ -27,7 +28,7 @@ export interface BodyBox {
 }
 
 export interface HitVol {
-  kind: 'jaw' | 'horn' | 'claw'
+  kind: 'jaw' | 'horn' | 'claw' | 'tail'
   x: number
   y: number
   z: number
@@ -83,15 +84,36 @@ export function attackVolumes(
     z: z + sn * box.mouth,
     r: Math.max(box.biteR + grace, youngBite(load, spent) ? 0.7 : box.biteR),
   })
-  const horn = hornById(load.horn)
-  if (horn && load.horn && load.horn !== 'smooth') {
-    const reach = box.mouth + (horn.len ?? 0.3) * box.scale * 0.55
+  const morph = morphOf(load)
+  const legacyHorn = hornById(load.horn)
+  if (morph.horn && morph.hornLv > 0) {
+    const reach = box.mouth + (0.35 + morph.hornLv * 0.18) * box.scale
     vols.push({
       kind: 'horn',
       x: x + cs * reach,
       y: y + box.rad * 0.55,
       z: z + sn * reach,
-      r: 0.12 * box.scale + (horn.wd ?? 0.12) * 0.14 * box.scale,
+      r: (0.12 + morph.hornLv * 0.03) * box.scale,
+    })
+  } else if (legacyHorn && load.horn && load.horn !== 'smooth') {
+    const reach = box.mouth + (legacyHorn.len ?? 0.3) * box.scale * 0.55
+    vols.push({
+      kind: 'horn',
+      x: x + cs * reach,
+      y: y + box.rad * 0.55,
+      z: z + sn * reach,
+      r: 0.12 * box.scale + (legacyHorn.wd ?? 0.12) * 0.14 * box.scale,
+    })
+  }
+  if (morph.tail) {
+    const back = box.mouth * 0.15 + box.len * 0.42
+    const wide = morph.tail === 'thresher' || morph.tail === 'fantail' || morph.tail === 'barbed'
+    vols.push({
+      kind: 'tail',
+      x: x - cs * back,
+      y: y,
+      z: z - sn * back,
+      r: (wide ? 0.28 : 0.2) * box.scale + (morph.tail === 'thresher' ? 0.16 : 0),
     })
   }
   const claws = load.arms > 0 || load.armType === 'claw' || load.armType === 'spade' || load.feet === 'claw'

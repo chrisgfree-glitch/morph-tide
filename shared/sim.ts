@@ -5,7 +5,7 @@ import type { Piece } from './build'
 import { attackVolumes, bodyBox, mouthHit, volumeHits, youngBite } from './body'
 import { CHUNK, WATER, WORLD_Z, carve, fill, groundAt } from './terrain'
 import { bossReady, buySkin, buySpec, canDig, cellSeconds, chopSeconds, compute, defenseCap, gemChance, landOk, purchase, pvpFactor, tierOf, type Buy, type Progress } from './rules'
-import { agility, ashoreNeed, incomingMissChance, morphFx, morphOf, tryBuy, type BuyResult } from './evolve'
+import { agility, ashoreNeed, hornDamage, incomingMissChance, morphFx, morphOf, tryBuy, type BuyResult } from './evolve'
 import { createSpawners, kindById, mulberry32, seedSpawners, stepSpawners, type SpawnRequest, type Spawner } from './prey'
 import { createHealPlants, stepHealPlants, tryEatPlant, type HealPlant } from './plants'
 import { addDrops, forageDrop, gearFx, spendCraft } from './craft'
@@ -58,6 +58,8 @@ export interface Ent {
   tele: number
   heavy: boolean
   peak: number
+  bleed: number
+  burn: number
   /** Spawner id for pooled, respawning prey. */
   pack?: string
 }
@@ -231,6 +233,8 @@ function make(partial: Partial<Ent> & Pick<Ent, 'id' | 'kind' | 'name' | 'x' | '
     tele: 0,
     heavy: false,
     peak: partial.y ?? 4,
+    bleed: 0,
+    burn: 0,
     air: compute(load, spent).air,
     salt: partial.id,
     respawn: 0,
@@ -266,6 +270,8 @@ function applySpawn(w: World, req: SpawnRequest): void {
     pooled.vz = 0
     pooled.hp = kind.hp
     pooled.maxHp = kind.hp
+    pooled.bleed = 0
+    pooled.burn = 0
     pooled.bias = kind.bias
     pooled.spent = kind.spent
     pooled.pack = req.spawnerId
@@ -646,6 +652,33 @@ function bump(map: Record<string, number>, key: string): void {
   map[key] = (map[key] ?? 0) + 1
 }
 
+
+function smashRocks(w: World, you: Ent, ev: Evt[]): void {
+  for (const n of w.nodes) {
+    if (n.kind !== 'rock' || n.amount <= 0) continue
+    const dz = (n.z ?? 0) - you.z
+    if ((n.x - you.x) * (n.x - you.x) + dz * dz > 6.25) continue
+    n.hp = 0
+    n.amount = 0
+    ev.push({ t: 'note', x: n.x, y: you.y, text: 'The horn breaks the rock' })
+    w.banner = 'The horn breaks the rock'
+    w.bannerT = Math.max(w.bannerT, 1.2)
+  }
+}
+
+function tickDots(e: Ent, dt: number, ev: Evt[]): void {
+  if (e.bleed > 0) {
+    e.bleed = Math.max(0, e.bleed - dt)
+    hurt(e, 3.5 * dt)
+    if (e.bleed <= 0) ev.push({ t: 'note', x: e.x, y: e.y, text: 'Bleed fades' })
+  }
+  if (e.burn > 0) {
+    e.burn = Math.max(0, e.burn - dt)
+    hurt(e, 4 * dt)
+    if (e.burn <= 0) ev.push({ t: 'note', x: e.x, y: e.y, text: 'Burn fades' })
+  }
+}
+
 export function step(w: World, dt: number, input: Frame): Evt[] {
   const ev: Evt[] = []
   w.time += dt
@@ -788,6 +821,7 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     if (you.x >= 66) you.vx = Math.min(you.vx, 0)
   }
   you.region = regionAt(you.x)
+  tickDots(you, dt, ev)
   you.biteCd = Math.max(0, you.biteCd - dt)
   you.biteT = Math.max(0, you.biteT - dt)
   you.windup = Math.max(0, you.windup - dt)
@@ -815,12 +849,34 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
       const close = volumeHits(vols, foe.x, foe.y, foe.z, pad)
         || (you.kind === 'player' && youngBite(you.load, you.spent) && mouthHit(you.x, you.y, you.z, you.yaw, mine, foe.x, foe.y, foe.z, theirs))
       if (!close) continue
-      const dmg = Math.max(1, Math.round(stats.bite * (heavy ? 1.65 : 1) * (1 + box.mass * 0.08)))
+      const hitVol = volumeHits(vols, foe.x, foe.y, foe.z, pad)
+      const morph = morphOf(you.load)
+      const fx = morphFx(morph)
+      const speed = Math.hypot(you.vx, you.vz)
+      const top = Math.max(0.01, stats.spd, stats.swim)
+      let dmg = stats.bite * (heavy ? 1.65 : 1) * (1 + box.mass * 0.08)
+      if ((heavy || hitVol?.kind === 'horn') && morph.horn) dmg += hornDamage(morph, speed, top)
+      if (hitVol?.kind === 'tail' || fx.whipStun || fx.slam || fx.slap || fx.slash || fx.shock) {
+        if (fx.slash) dmg += 2
+        if (fx.slam) dmg += 3
+        if (fx.slap) dmg += 1
+        if (fx.whipStun) dmg += 2
+        if (fx.shock) dmg += 1.5
+      }
+      if (fx.pierce) dmg *= 1.25
+      dmg = Math.max(1, Math.round(dmg))
       hurt(foe, dmg)
-      foe.vx = Math.cos(you.yaw) * (heavy ? 5.4 : 3.4) * box.mass
-      foe.vz = Math.sin(you.yaw) * (heavy ? 5.4 : 3.4) * box.mass
-      foe.vy += 1.2
-      foe.stun = heavy ? 0.16 : 0.08
+      const knock = (heavy ? 5.4 : 3.4) * box.mass * (fx.knock || fx.slam || fx.slap ? 1.55 : 1)
+      foe.vx = Math.cos(you.yaw) * knock
+      foe.vz = Math.sin(you.yaw) * knock
+      foe.vy += 1.2 + (fx.slam ? 1.4 : 0)
+      foe.stun = Math.max(foe.stun, heavy ? 0.16 : 0.08)
+      if (fx.whipStun) foe.stun = Math.max(foe.stun, 0.55)
+      if (fx.shock) foe.stun = Math.max(foe.stun, 0.4)
+      if (fx.slap) foe.stun = Math.max(foe.stun, 0.22)
+      if (fx.bleed > 0) foe.bleed = Math.max(foe.bleed, 2.4)
+      if (fx.burn > 0) foe.burn = Math.max(foe.burn, 2.2)
+      if (fx.breakRock && (heavy || hitVol?.kind === 'horn')) smashRocks(w, you, ev)
       w.shake = Math.max(w.shake, heavy ? 0.22 : 0.12)
       w.hitStop = heavy ? 0.1 : 0.065
       ev.push({ t: 'hit', x: foe.x, y: foe.y, text: `${dmg}` })
@@ -909,6 +965,7 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     else fill(you.x + Math.cos(you.yaw) * 1.2, you.y + Math.sin(you.pitch) * 0.5, you.z + Math.sin(you.yaw) * 1.2, 1.2, dt * 1.6)
   }
   npcThink(w, dt, ev)
+  for (const e of w.ents) if (e.alive && e.kind !== 'player') tickDots(e, dt, ev)
   meats(w, you, ev)
   hazards(w, you, dt, ev)
   caveIns(w, dt, ev)

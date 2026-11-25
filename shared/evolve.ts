@@ -6,7 +6,7 @@ import { starterLoad, type Loadout } from './catalog'
 import type { Progress, Stats } from './rules'
 
 export type Branch = 'guppy' | 'fish' | 'octopus'
-export type Category = 'skin' | 'head' | 'horn' | 'fin' | 'dorsal' | 'rear' | 'extraRear' | 'tail' | 'limb' | 'lungs'
+export type Category = 'skin' | 'head' | 'horn' | 'fin' | 'dorsal' | 'rear' | 'extraRear' | 'tail' | 'limb' | 'lungs' | 'armor'
 export type Place = 'side' | 'belly' | 'back' | 'rear' | 'side+belly'
 
 export interface Morph {
@@ -28,6 +28,8 @@ export interface Morph {
   limb: string
   /** Shared — lets any branch go ashore. */
   lungs: string
+  /** Shared back armor, distinct from skins and dorsals. */
+  armor: string
   /** Full EP actually paid, keyed like "skin:scales" or "horn:lance:2". */
   paid: Record<string, number>
 }
@@ -83,6 +85,9 @@ export interface MorphFx {
   burn: number
   whipStun: boolean
   slam: boolean
+  slap: boolean
+  slash: boolean
+  shock: boolean
   lure: boolean
   landMove: boolean
   hornSharp: number
@@ -135,6 +140,7 @@ export function emptyMorph(): Morph {
     tail: 'fantail',
     limb: '',
     lungs: '',
+    armor: '',
     paid: {},
   }
 }
@@ -204,9 +210,27 @@ export const LIMBS: PartDef[] = [
 
 export const LUNGS: PartDef[] = [
   part('lungs', 'Lungs', 'lungs', 10, {
-    desc: 'Breathe on land. Buy this (or octopus land limbs) to go ashore and reach the Strand Colossus.',
+    desc: 'Breathe on land. Buy this (or octopus land limbs) to go ashore.',
     tags: ['lungs'],
     air: 8,
+  }),
+]
+
+export const ARMORS: PartDef[] = [
+  part('bonescales', 'Bone Scales', 'armor', 14, {
+    place: 'back',
+    def: 2,
+    hp: 4,
+    desc: 'Overlapping bone scales along the back. Light back armor. Distinct from the Bony Plates skin and from dorsals.',
+    tags: ['back-armor'],
+  }),
+  part('plating', 'Plating', 'armor', 28, {
+    place: 'back',
+    def: 4,
+    hp: 6,
+    spd: -0.12,
+    desc: 'Heavy plates along the back. High defense, a little slower. Distinct from dorsals and from the Bony Plates skin.',
+    tags: ['back-armor'],
   }),
 ]
 
@@ -219,9 +243,9 @@ export const DORSALS: PartDef[] = [
 ]
 
 export const TAILS: PartDef[] = [
-  part('fantail', 'Fan', 'tail', 6, { swim: 0.25, desc: 'A rounded caudal fan.', tags: [] }),
-  part('forked', 'Forked', 'tail', 10, { swim: 0.5, spd: 0.25, desc: 'A forked tail built for pace.', tags: [] }),
-  part('eel', 'Eel', 'tail', 12, { swim: 0.35, evasion: 0.06, desc: 'A long ribbon tail. Slippery in weeds.', tags: [] }),
+  part('fantail', 'Fan', 'tail', 6, { swim: 0.25, desc: 'A rounded caudal fan. Close-range slap that staggers prey.', tags: ['slap'] }),
+  part('forked', 'Forked', 'tail', 10, { swim: 0.5, spd: 0.25, bite: 1, desc: 'A forked tail built for pace. A cutting slash on the pass.', tags: ['slash'] }),
+  part('eel', 'Eel', 'tail', 12, { swim: 0.35, evasion: 0.06, desc: 'A long ribbon tail. Slippery in weeds, and a shocking lash.', tags: ['shock'] }),
   part('thresher', 'Thresher', 'tail', 20, { swim: 0.3, bite: 1, desc: 'A whip-long upper lobe. Stun swipe.', tags: ['whip-stun'] }),
   part('barbed', 'Barbed Salamander', 'tail', 22, { branch: 'octopus', bite: 2, desc: 'A heavy, barbed tail. Slam attack.', tags: ['slam'] }),
 ]
@@ -242,7 +266,7 @@ export const EXTRA_REAR: PartDef = part('extraRear', 'Extra rear fin', 'extraRea
   tags: ['agility'],
 })
 
-const ALL_PARTS: PartDef[] = [...SKINS, ...HEADS, ...HORNS, ...FINS, ...LIMBS, ...LUNGS, ...DORSALS, ...REARS, ...TAILS, EXTRA_REAR]
+const ALL_PARTS: PartDef[] = [...SKINS, ...HEADS, ...HORNS, ...FINS, ...LIMBS, ...LUNGS, ...ARMORS, ...DORSALS, ...REARS, ...TAILS, EXTRA_REAR]
 
 export function allParts(): PartDef[] {
   return ALL_PARTS
@@ -338,6 +362,9 @@ export function morphFx(morph: Morph): MorphFx {
     burn: 0,
     whipStun: false,
     slam: false,
+    slap: false,
+    slash: false,
+    shock: false,
     lure: false,
     landMove: false,
     hornSharp: 0,
@@ -366,6 +393,9 @@ export function morphFx(morph: Morph): MorphFx {
     if (def.tags.includes('burn')) fx.burn = Math.max(fx.burn, 2)
     if (def.tags.includes('whip-stun')) fx.whipStun = true
     if (def.tags.includes('slam')) fx.slam = true
+    if (def.tags.includes('slap')) fx.slap = true
+    if (def.tags.includes('slash')) fx.slash = true
+    if (def.tags.includes('shock')) fx.shock = true
     if (def.tags.includes('lure')) fx.lure = true
     if (def.tags.includes('land')) fx.landMove = true
   }
@@ -379,6 +409,7 @@ export function morphFx(morph: Morph): MorphFx {
   apply(partById(morph.tail))
   apply(partById(morph.limb))
   apply(partById(morph.lungs))
+  apply(partById(morph.armor))
   if (morph.extraRear > 0) {
     const n = Math.min(2, morph.extraRear)
     const extra = partById('extraRear')
@@ -419,6 +450,7 @@ export function applyMorphStats(s: Stats, morph: Morph): void {
   add(partById(morph.tail === 'fantail' || (morph.tail === 'fan' && morph.branch === 'guppy') ? '' : morph.tail))
   add(partById(morph.limb))
   add(partById(morph.lungs))
+  add(partById(morph.armor))
   add(partById(morph.rear))
   if (morph.skin === 'leather') {
     s.spd *= 0.95
@@ -445,6 +477,7 @@ export function equippedLabel(morph: Morph, cat: Category): string {
   if (cat === 'tail') return partById(morph.tail === 'fan' ? 'fantail' : morph.tail)?.name ?? 'Fan'
   if (cat === 'limb') return partById(morph.limb)?.name ?? 'None'
   if (cat === 'lungs') return partById(morph.lungs)?.name ?? 'None'
+  if (cat === 'armor') return partById(morph.armor)?.name ?? 'None'
   return ''
 }
 
@@ -561,6 +594,7 @@ function alreadyHas(morph: Morph, def: PartDef, level?: number): boolean {
   if (def.category === 'tail') return morph.tail === def.id || (def.id === 'fantail' && morph.tail === 'fan')
   if (def.category === 'limb') return morph.limb === def.id
   if (def.category === 'lungs') return morph.lungs === def.id
+  if (def.category === 'armor') return morph.armor === def.id
   if (def.category === 'extraRear') return morph.extraRear >= 2
   return false
 }
@@ -641,6 +675,11 @@ export function tryBuy(you: Progress, id: string, opts: { confirm?: boolean; lev
     morph.tail = def.id
     return { ok: true, refund: 0, message: `Grew a ${def.name} tail.` }
   }
+  if (def.category === 'armor') {
+    spend(you, `armor:${def.id}`, def.cost)
+    morph.armor = def.id
+    return { ok: true, refund: 0, message: `Grew ${def.name} along the back.` }
+  }
   if (def.category === 'lungs') {
     spend(you, `lungs:${def.id}`, def.cost)
     morph.lungs = def.id
@@ -695,4 +734,5 @@ export const CATALOG_COUNTS = {
   rears: REARS.length,
   tails: TAILS.length,
   lungs: LUNGS.length,
+  armor: ARMORS.length,
 }

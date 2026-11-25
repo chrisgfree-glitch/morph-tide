@@ -1166,6 +1166,7 @@ export class Game {
         `<p>Horn: ${equippedLabel(morph, 'horn')}</p>`,
         `<p>Fins: ${equippedLabel(morph, 'fin')}</p>`,
         `<p>Dorsal: ${equippedLabel(morph, 'dorsal')}</p>`,
+        morph.armor ? `<p>Back armor: ${equippedLabel(morph, 'armor')}</p>` : '',
         `<p>Rear fins: ${equippedLabel(morph, 'rear')}${morph.extraRear ? ` · extras ${morph.extraRear}/2` : ''}</p>`,
         `<p>Tail: ${equippedLabel(morph, 'tail')}</p>`,
         morph.limb ? `<p>Limbs: ${equippedLabel(morph, 'limb')}</p>` : '',
@@ -1176,6 +1177,7 @@ export class Game {
       { id: 'head', name: 'Heads' },
       { id: 'horn', name: 'Horns' },
       { id: 'fin', name: 'Fins' },
+      { id: 'armor', name: 'Back Armor' },
       { id: 'dorsal', name: 'Dorsals' },
       { id: 'rear', name: 'Rear Fins' },
       { id: 'tail', name: 'Tails' },
@@ -2093,7 +2095,7 @@ export class Game {
       if (!e.alive || e.kind === 'meat') continue
       vols.push(...attackVolumes(e.load, e.spent, e.kind === 'boss', e.species, e.x, e.y, e.z, e.yaw))
     }
-    const colors = { jaw: 0xffe6a0, horn: 0xd4a0ff, claw: 0xa0e6ff }
+    const colors = { jaw: 0xffe6a0, horn: 0xd4a0ff, claw: 0xa0e6ff, tail: 0xa0ffc4 }
     while (this.hitDebug.length < vols.length) {
       const m = new THREE.Mesh(
         new THREE.SphereGeometry(1, 12, 8),

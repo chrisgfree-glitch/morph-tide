@@ -1,5 +1,5 @@
 import { starterLoad } from '../shared/catalog'
-import { FINS, HORNS, SKINS, HEADS, DORSALS, REARS, TAILS, LIMBS, EXTRA_REAR, tryBuy, convertToGuppy, hornDamage, emptyMorph, mapLegacySkin, ensureMorph, agility, incomingMissChance, morphFx } from '../shared/evolve'
+import { FINS, HORNS, SKINS, HEADS, DORSALS, REARS, TAILS, LIMBS, EXTRA_REAR, ARMORS, tryBuy, convertToGuppy, hornDamage, emptyMorph, mapLegacySkin, ensureMorph, agility, incomingMissChance, morphFx } from '../shared/evolve'
 import { createSpawners, seedSpawners, stepSpawners, mulberry32 } from '../shared/prey'
 import { createHealPlants, tryEatPlant, stepHealPlants } from '../shared/plants'
 import { LAND_TREES, LAND_TREE_NAMES } from '../shared/landcover'
@@ -385,6 +385,16 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
   if (DORSALS.length !== 5) throw new Error('expected 5 dorsals')
   if (REARS.length !== 4) throw new Error(`expected 4 rear fins, got ${REARS.length}`)
   if (TAILS.length !== 5) throw new Error('expected 5 tails')
+  for (const id of ['fantail', 'forked', 'eel', 'thresher', 'barbed']) {
+    const tail = TAILS.find((x) => x.id === id)
+    if (!tail?.tags.some((tag) => ['slap', 'slash', 'shock', 'whip-stun', 'slam'].includes(tag))) {
+      throw new Error(`${id} tail needs an attack tag`)
+    }
+  }
+  if (ARMORS.length !== 2 || !ARMORS.some((a) => a.id === 'plating') || !ARMORS.some((a) => a.id === 'bonescales')) {
+    throw new Error('back armor must include Plating and Bone Scales')
+  }
+  if (!ARMORS.every((a) => a.place === 'back')) throw new Error('back armor must sit on the back')
   if (FINS.some((f) => f.id === 'trout' || f.id === 'bass')) throw new Error('trout/bass must be removed')
   const fishFins = ['fan', 'spinyfin-side', 'dolphin', 'lionfish', 'sharkfin-side', 'manta'].map((id) => FINS.find((f) => f.id === id)!)
   for (let i = 1; i < fishFins.length; i++) {
@@ -441,6 +451,13 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
   const dmgIdle = hornDamage(ensureMorph(horned.load), 0, 10)
   const dmgFull = hornDamage(ensureMorph(horned.load), 10, 10)
   if (dmgFull <= dmgIdle) throw new Error('horn damage should scale with speed')
+  const plated = { ep: 80, spent: 0, load: starterLoad(), unlocked: [] as string[] }
+  ensureMorph(plated.load)
+  const beforeDef = compute(plated.load, plated.spent).def
+  const plateBuy = tryBuy(plated, 'plating')
+  if (!plateBuy.ok) throw new Error(`plating should buy: ${plateBuy.reason}`)
+  if (compute(plated.load, plated.spent).def <= beforeDef) throw new Error('Plating should raise defense')
+  if (ensureMorph(plated.load).armor !== 'plating') throw new Error('plating should equip as back armor')
 
   const lion = emptyMorph()
   lion.sideFin = 'lionfish'
@@ -489,6 +506,8 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
   const w = createWorld()
   const prey = w.ents.filter((e) => e.kind === 'npc')
   if (prey.length < 100) throw new Error(`world should start with plenty of prey, got ${prey.length}`)
+  if (!w.ents.some((e) => e.region === 'land' && e.kind === 'npc' && e.bias <= 6 && e.alive)) throw new Error('land should have prey')
+  if (!w.ents.some((e) => (e.species === 'hunter' || e.species === 'brute') && e.alive)) throw new Error('land should have a predator')
   if (!w.plants?.some((p) => p.kind === 'berry')) throw new Error('world should include land berry bushes')
   if (!w.nodes.some((n) => n.kind === 'tree' && LAND_TREES.includes(n.mat as (typeof LAND_TREES)[number]))) throw new Error('forage trees should be placed')
   const walker = playerOf(w)
@@ -593,6 +612,35 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
   if (landOk(you.load, you.spent)) throw new Error('octopus head/horn should reach the boss before taking land limbs')
   console.log('octopus branch also unlocks the shallows Colossus by attack')
 }
+
+{
+  const w = createWorld()
+  const you = playerOf(w)
+  you.ep = 40
+  you.x = 20
+  you.y = 3
+  const horn = applyMorphBuy(you, 'coral')
+  if (!horn.ok) throw new Error(`coral for combat: ${horn.reason}`)
+  const foe = w.ents.find((e) => e.kind === 'npc' && e.alive && e.region === 'sea' && e.bias <= 0)
+  if (!foe) throw new Error('need a sea snack to test horn combat')
+  you.x = foe.x - 0.8
+  you.y = foe.y
+  you.z = foe.z
+  you.yaw = 0
+  const hp0 = foe.hp
+  for (let i = 0; i < 6; i++) {
+    you.biteCd = 0
+    you.windup = 0
+    you.recover = 0
+    you.stun = 0
+    you.heavy = true
+    step(w, 0.12, { ax: 0, ay: 0, jump: false, bite: true, dig: false, use: false, ink: false, horn: true, forward: 0 })
+  }
+  if (foe.hp >= hp0) throw new Error('coral horn should damage prey')
+  if (foe.bleed <= 0 && foe.hp > 0) throw new Error('Coral Spike should apply bleed')
+  console.log('horn I–III combat applies damage and bleed')
+}
+
 
 
 console.log('all checks ok')

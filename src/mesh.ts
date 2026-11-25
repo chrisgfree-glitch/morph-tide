@@ -772,6 +772,12 @@ function dressMorph(g: THREE.Group, load: Loadout, accent: number, body: number)
   // Tails
   const tail = g.getObjectByName('tail')
   if (tail && morph.tail && morph.tail !== 'fantail') {
+    if (morph.tail === 'forked') {
+      for (const s of [-1, 1]) {
+        const lobe = part(tail, GEO.fin, -0.15, s * 0.08, 0, 0.55, 0.7, 1, accent, 'fork', 0.5, 0.02, 'scale', false)
+        lobe.rotation.z = s * 0.55
+      }
+    }
     if (morph.tail === 'thresher') {
       const whip = part(tail, GEO.fin, -0.2, 0.2, 0, 0.5, 1.6, 1, accent, 'whip', 0.5, 0.02, 'scale', false)
       whip.rotation.z = 0.9
@@ -782,6 +788,20 @@ function dressMorph(g: THREE.Group, load: Loadout, accent: number, body: number)
     if (morph.tail === 'barbed') {
       const barb = part(tail, GEO.horn, -0.35, 0, 0, 1.1, 0.8, 0.8, accent, 'barb', 0.45, 0.1, 'hide', false)
       barb.rotation.z = 1.2
+    }
+  }
+
+  // Back armor: on the back, not a dorsal fin and not the Bony Plates skin.
+  if (morph.armor === 'bonescales') {
+    for (let i = 0; i < 8; i++) {
+      const sc = part(g, GEO.plate, 0.28 - i * 0.1, 0.16, (i % 2 ? 0.07 : -0.07), 0.28, 0.14, 0.28, 0xd8c8a8, 'bonescale', 0.45, 0.1, 'hide', false)
+      sc.userData.morph = true
+    }
+  }
+  if (morph.armor === 'plating') {
+    for (let i = 0; i < 4; i++) {
+      const pl = part(g, GEO.plate, 0.24 - i * 0.18, 0.18, 0, 0.55, 0.2, 0.7, 0xc8c0b0, 'plating', 0.5, 0.14, 'hide', false)
+      pl.userData.morph = true
     }
   }
 
@@ -808,12 +828,21 @@ function dressMorph(g: THREE.Group, load: Loadout, accent: number, body: number)
 }
 
 export function preyInstanceGeo(species: string): THREE.BufferGeometry {
-  if (species === 'bell') return new THREE.SphereGeometry(0.28, 8, 6)
-  if (species === 'plate') return new THREE.SphereGeometry(0.32, 8, 6)
-  if (species === 'crab' || species === 'beetle' || species === 'magma') return new THREE.SphereGeometry(0.26, 8, 6)
-  const geo = new THREE.SphereGeometry(0.22, 8, 6)
-  geo.scale(1.6, 0.7, 0.7)
-  return geo
+  const ball = (sx: number, sy: number, sz: number, r = 0.22) => {
+    const geo = new THREE.SphereGeometry(r, 8, 6)
+    geo.scale(sx, sy, sz)
+    return geo
+  }
+  if (species === 'bell') return ball(1, 1.15, 1, 0.28)
+  if (species === 'plate' || species === 'platebug') return ball(1.15, 0.7, 1.15, 0.3)
+  if (species === 'crab') return ball(1.5, 0.45, 1.35, 0.26)
+  if (species === 'beetle') return ball(1.15, 0.65, 0.9, 0.24)
+  if (species === 'newt') return ball(1.8, 0.55, 0.55, 0.22)
+  if (species === 'lizard') return ball(2.0, 0.5, 0.55, 0.22)
+  if (species === 'hunter') return ball(2.3, 0.7, 0.75, 0.28)
+  if (species === 'brute') return ball(1.6, 1.05, 1.15, 0.34)
+  if (species === 'magma') return ball(1.2, 0.7, 0.7, 0.26)
+  return ball(1.6, 0.7, 0.7, 0.22)
 }
 
 export const PREY_TINT: Record<string, number> = {
@@ -833,7 +862,7 @@ export const PREY_TINT: Record<string, number> = {
 export function creatureKey(load: Loadout, spent: number, species = ''): string {
   const m = load.morph
   const morph = m
-    ? [m.branch, m.skin, m.head, m.horn, m.hornLv, m.sideFin, m.bellyFin, m.dorsal, m.rear, m.extraRear, m.tail, m.limb].join('|')
+    ? [m.branch, m.skin, m.head, m.horn, m.hornLv, m.sideFin, m.bellyFin, m.dorsal, m.rear, m.extraRear, m.tail, m.limb, m.armor, m.lungs].join('|')
     : ''
   return JSON.stringify({ ...load, morph, tier: tierOf(spent), bucket: Math.floor(spent / 40), species })
 }
