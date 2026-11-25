@@ -175,6 +175,8 @@ export class ChunkWorld {
       bucket.mesh.instanceMatrix.needsUpdate = true
       if (bucket.mesh.instanceColor) bucket.mesh.instanceColor.needsUpdate = true
       bucket.mesh.frustumCulled = true
+      bucket.mesh.castShadow = false
+      bucket.mesh.receiveShadow = false
       this.group.add(bucket.mesh)
       this.rocks.push(bucket.mesh)
     }
@@ -300,7 +302,7 @@ export class ChunkWorld {
 }
 
 function rockMaterial(): THREE.MeshStandardMaterial {
-  const mat = new THREE.MeshStandardMaterial({ color: 0xc5d0b4, roughness: 0.78, metalness: 0.02, emissive: 0x1a2418, emissiveIntensity: 0.08 })
+  const mat = new THREE.MeshStandardMaterial({ color: 0xd5deca, roughness: 0.58, metalness: 0, emissive: 0x4a5c38, emissiveIntensity: 0.38 })
   const loader = new THREE.TextureLoader()
   ;(['rock_color', 'rock_normal', 'rock_rough'] as const).forEach((name, i) => {
     loader.load(`/textures/${name}.webp`, (tex) => {
@@ -309,8 +311,10 @@ function rockMaterial(): THREE.MeshStandardMaterial {
       tex.generateMipmaps = true
       tex.anisotropy = 4
       if (i === 0) mat.map = tex
-      else if (i === 1) mat.normalMap = tex
-      else mat.roughnessMap = tex
+      else if (i === 1) {
+        mat.normalMap = tex
+        mat.normalScale = new THREE.Vector2(0.35, 0.35)
+      } else mat.roughnessMap = tex
       mat.needsUpdate = true
     })
   })
@@ -330,7 +334,7 @@ function rockGeo(seed: number): THREE.BufferGeometry {
     const k = hash(z * 2.2, x * 4.1 + seed, y * 1.7)
     const r = 0.72 + n * 0.62 + k * 0.12
     let ny = y * r
-    if (ny < -0.12) ny = -0.12
+    if (ny < -0.2) ny = -0.2 + (ny + 0.2) * 0.2
     const sx = squat ? 1.05 : 0.86 + seed * 0.05
     const sy = tall ? 0.86 : squat ? 0.42 : 0.56 + (seed % 3) * 0.08
     const sz = 0.78 + (seed % 3) * 0.08 + k * 0.1

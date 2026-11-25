@@ -2,7 +2,7 @@ import type { Loadout } from './catalog'
 import { GEMS, GUARD_CAP, HIDES, RAID_GAP, RAID_MIN_TIER, RAIDER_CAP, SHIELD_SEC, WARN_SEC, buildById, defenseById, rockById, starterLoad, treeById } from './catalog'
 import { digTick, fullColumn, tubeColumn, ventColumn, type Column } from './dig'
 import type { Piece } from './build'
-import { attackVolumes, bodyBox, volumeHits } from './body'
+import { attackVolumes, bodyBox, mouthHit, volumeHits, youngBite } from './body'
 import { WATER, WORLD_Z, carve, fill, groundAt } from './terrain'
 import { buySkin, buySpec, canDig, cellSeconds, chopSeconds, compute, defenseCap, gemChance, landOk, purchase, pvpFactor, tierOf, type Buy, type Progress } from './rules'
 
@@ -133,6 +133,7 @@ export interface World {
   eats: number
   gateOpen: boolean
   pieces: Piece[]
+  noteCool: number
 }
 
 export interface Frame {
@@ -239,6 +240,7 @@ export function createWorld(): World {
     eats: 0,
     gateOpen: false,
     pieces: [],
+    noteCool: 0,
   }
   w.ents.push(make({ id: w.nextId++, kind: 'player', name: 'Tidewisp', species: 'you', x: 8, y: 2.4 }))
   const seeds: [string, string, number, number, Ent['region'], number][] = [
@@ -423,6 +425,7 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   const ev: Evt[] = []
   w.time += dt
   w.bannerT = Math.max(0, w.bannerT - dt)
+  w.noteCool = Math.max(0, w.noteCool - dt)
   w.shake = Math.max(0, w.shake - dt)
   const you = playerOf(w)
   if (!you.alive) return ev
@@ -555,7 +558,10 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
       if (!foe.alive || foe.id === you.id || foe.kind === 'meat') continue
       if (foe.clan && foe.clan === you.clan) continue
       const theirs = bodyBox(foe.load, foe.spent, foe.kind === 'boss', foe.species)
-      if (!volumeHits(vols, foe.x, foe.y, foe.z, theirs.rad + theirs.len * 0.15)) continue
+      const pad = theirs.rad + theirs.len * 0.15
+      const close = volumeHits(vols, foe.x, foe.y, foe.z, pad)
+        || (you.kind === 'player' && youngBite(you.load, you.spent) && mouthHit(you.x, you.y, you.z, you.yaw, mine, foe.x, foe.y, foe.z, theirs))
+      if (!close) continue
       const dmg = Math.max(1, Math.round(stats.bite * (heavy ? 1.65 : 1) * (1 + box.mass * 0.08)))
       hurt(foe, dmg)
       foe.vx = Math.cos(you.yaw) * (heavy ? 5.4 : 3.4) * box.mass
@@ -594,15 +600,24 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     you.biteCd = 0.04
     const aim = nearestInCone(w, you)
     if (aim) {
+      const young = you.kind === 'player' && youngBite(you.load, you.spent)
       const dx = aim.x - you.x
       const dz = aim.z - you.z
+      const dist = Math.hypot(dx, dz, aim.y - you.y)
       const want = Math.atan2(dz, dx)
       let turn = want - you.yaw
       while (turn > Math.PI) turn -= Math.PI * 2
       while (turn < -Math.PI) turn += Math.PI * 2
-      if (Math.abs(turn) < 0.9) you.yaw += turn * 0.45
-      you.vx += Math.cos(you.yaw) * 6.2
-      you.vz += Math.sin(you.yaw) * 6.2
+      const limit = young ? 1.2 : 0.9
+      if (Math.abs(turn) < limit) you.yaw += turn * (young ? 0.88 : 0.45)
+      if (young && dist < 2.8 && Math.abs(turn) < 1.2) {
+        const pull = Math.min(0.55, 0.2 + (2.8 - dist) * 0.18)
+        you.x += Math.cos(you.yaw) * pull * 0.45 + (aim.x - you.x) * 0.16
+        you.z += Math.sin(you.yaw) * pull * 0.45 + (aim.z - you.z) * 0.16
+        you.y += (aim.y - you.y) * 0.22
+      }
+      you.vx += Math.cos(you.yaw) * (young ? 7.4 : 6.2)
+      you.vz += Math.sin(you.yaw) * (young ? 7.4 : 6.2)
       you.vy += Math.max(-2.4, Math.min(2.4, (aim.y - you.y) * 2.2))
     }
     ev.push({ t: 'bite', x: you.x, y: you.y, text: '' })
@@ -653,10 +668,16 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   return ev
 }
 
+function tell(w: World, ev: Evt[], you: Ent, text: string): void {
+  if (w.noteCool > 0) return
+  w.noteCool = 1.8
+  ev.push({ t: 'note', x: you.x, y: you.y, text })
+}
+
 function digAt(w: World, you: Ent, dt: number, ev: Evt[]): void {
   const col = w.columns.find((c) => Math.abs(c.x - you.x) < 3.2)
   if (!col) {
-    if (!canDig(you.load, you.spent)) ev.push({ t: 'note', x: you.x, y: you.y, text: tierOf(you.spent) < 3 ? 'Digging unlocks at tier 3' : 'Need spade, claw arms, or strong feet' })
+    if (!canDig(you.load, you.spent)) tell(w, ev, you, tierOf(you.spent) < 3 ? 'Digging unlocks at tier 3' : 'Need spade, claw arms, or strong feet')
     else {
       you.bag.mud = (you.bag.mud ?? 0) + dt
       const ax = you.x + Math.cos(you.yaw) * 1.3
@@ -667,7 +688,7 @@ function digAt(w: World, you: Ent, dt: number, ev: Evt[]): void {
     return
   }
   const tick = digTick(col, you.load, you.spent, dt, compute(you.load, you.spent).heat > 0)
-  if (tick.blocked) ev.push({ t: 'note', x: you.x, y: you.y, text: tick.blocked })
+  if (tick.blocked) tell(w, ev, you, tick.blocked)
   if (tick.cell) {
     ev.push({ t: 'dig', x: col.x, y: you.y, text: tick.deep ? 'Deep stone splits' : 'A layer falls' })
     w.debris.push({ x: col.x + (you.id % 3) * 0.2, y: you.y + 1.4, vy: 0.4, life: 1.6, dmg: 0 })
@@ -689,7 +710,7 @@ function useNode(w: World, you: Ent, ev: Evt[]): void {
   if (node.kind === 'tree') {
     const secs = chopSeconds(you.load, you.spent, node.mat)
     if (secs === null) {
-      ev.push({ t: 'note', x: you.x, y: you.y, text: 'Need a cutting jaw, teeth, or a cutter for this wood' })
+      tell(w, ev, you, 'Need a cutting jaw, teeth, or a cutter for this wood')
       return
     }
     node.hp -= 12 / secs
@@ -702,7 +723,7 @@ function useNode(w: World, you: Ent, ev: Evt[]): void {
   }
   const secs = cellSeconds(you.load, you.spent, node.mat)
   if (secs === null) {
-    ev.push({ t: 'note', x: you.x, y: you.y, text: 'Need a horn, crushing jaw, spade, or breaker for this rock' })
+    tell(w, ev, you, 'Need a horn, crushing jaw, spade, or breaker for this rock')
     return
   }
   node.hp -= 8 / secs

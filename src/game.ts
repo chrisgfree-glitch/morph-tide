@@ -892,7 +892,9 @@ export class Game {
     this.resize()
     const hint = document.getElementById('hint')
     const touch = !document.getElementById('touch')?.hidden
-    if (hint && !localStorage.getItem('evo2.hinted')) {
+    const you = playerOf(this.world)
+    const guppyStart = you.spent < 12 && you.load.legs === 0 && you.load.size <= 0.55
+    if (hint && guppyStart && !localStorage.getItem('evo2.hinted')) {
       hint.hidden = false
       hint.textContent = touch
         ? 'You are a tiny guppy. Eat the fry around you (5 to start). The left stick steers. Drag the right side to look. Attack locks on and lunges.'
@@ -1568,7 +1570,11 @@ export class Game {
       }
     }
     if (this.buildMode && (this.actHeld || k.has('f'))) this.pickupPiece()
-    if (!backKey && camForward > -0.2 && !this.buildMode) camForward = Math.min(1, camForward + 0.62)
+    if (!backKey && camForward > -0.2 && !this.buildMode) {
+      const prey = nearestInCone(this.world, you)
+      const near = prey ? Math.hypot(prey.x - you.x, prey.y - you.y, prey.z - you.z) : 99
+      camForward = Math.min(1, camForward + (near < 2.4 ? 0.12 : 0.62))
+    }
     // Camera-relative move; when locked, face the prey and strafe around it.
     let moveF = camForward
     let moveS = camStrafe
@@ -1675,6 +1681,11 @@ export class Game {
         }
         if (e.t === 'gate') this.burst(e.x, e.y, 0xd4c4a4, e.text)
         if (e.t === 'warn') this.flashHit(e.x, e.y)
+        if (e.t === 'note' && e.text) {
+          this.world.banner = e.text
+          this.world.bannerT = Math.max(this.world.bannerT, 2.2)
+        }
+        if (e.t === 'eat') this.flashHit(e.x, e.y)
       }
     }
     this.sync()
@@ -2091,7 +2102,8 @@ export function mount(): Game | null {
 }
 
 function earlyGoal(w: World, you: Ent, fallback: string): string {
-  if (w.eats < 5) return `Eat 5 fish (${w.eats}/5)`
+  const guppy = you.spent < 12 && you.load.legs === 0 && you.load.size <= 0.55
+  if (guppy && w.eats < 5) return `Eat 5 fish (${w.eats}/5)`
   if (you.load.lungs < 1) {
     if (you.spent < 12) return 'Grow lungs — first grow a steelhead, then Evolve (E)'
     return you.ep >= 6 ? 'Grow lungs — open Evolve (E)' : 'Grow lungs — earn 6 EP, then Evolve (E)'

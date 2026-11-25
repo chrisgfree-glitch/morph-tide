@@ -41,6 +41,11 @@ const SPECIES: Record<string, { long: number; tall: number }> = {
   plate: { long: 0.95, tall: 0.9 },
 }
 
+/** Guppy-stage hunter: small body, first minutes of a new game. */
+export function youngBite(load: Loadout, spent: number): boolean {
+  return spent < 12 && load.legs === 0 && load.size <= 0.55
+}
+
 export function bodyBox(load: Loadout, spent: number, boss = false, species = ''): BodyBox {
   const scale = bodyScale(load, spent, boss)
   const mass = massOf(load, spent)
@@ -70,12 +75,13 @@ export function attackVolumes(
   const cs = Math.cos(yaw)
   const sn = Math.sin(yaw)
   const vols: HitVol[] = []
+  const grace = youngBite(load, spent) ? 0.62 : 0.1
   vols.push({
     kind: 'jaw',
     x: x + cs * box.mouth,
     y: y + box.rad * 0.05,
     z: z + sn * box.mouth,
-    r: box.biteR,
+    r: Math.max(box.biteR + grace, youngBite(load, spent) ? 0.7 : box.biteR),
   })
   const horn = hornById(load.horn)
   if (horn && load.horn && load.horn !== 'smooth') {

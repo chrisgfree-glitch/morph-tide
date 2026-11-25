@@ -1,6 +1,6 @@
 import { starterLoad } from '../shared/catalog'
 import { columnSeconds } from '../shared/dig'
-import { attackVolumes, bodyScale, volumeHits } from '../shared/body'
+import { attackVolumes, bodyScale, volumeHits, youngBite } from '../shared/body'
 import { applyWorldSnapshot, createWorld, playerOf, snapshotWorld, step } from '../shared/sim'
 import { applyGameSave, encodeGameSave, parseGameSave, serializeGameSave } from '../shared/save'
 import { canPlace, placePiece, refundPiece } from '../shared/build'
@@ -258,3 +258,29 @@ applyGameSave(reloaded, parseGameSave(afterPickup)!)
 if (reloaded.pieces.length) throw new Error('refunded piece should stay gone after save/load')
 if ((playerOf(reloaded).bag.kelp ?? 0) !== 2) throw new Error('refunded kelp should survive save/load')
 console.log('pickup refunds without a free replacement; refunds persist')
+
+{
+  const hunter = createWorld()
+  const gup = playerOf(hunter)
+  const snack = hunter.ents.find((e) => e.kind === 'npc' && e.region === 'sea' && e.bias <= 0 && e.alive)
+  if (!snack) throw new Error('expected nearby fry')
+  if (!youngBite(gup.load, gup.spent)) throw new Error('new game should use the generous guppy bite')
+  const yaw = Math.atan2(snack.z - gup.z, snack.x - gup.x)
+  gup.yaw = yaw
+  gup.x = snack.x - Math.cos(yaw) * 1.65
+  gup.z = snack.z - Math.sin(yaw) * 1.65
+  gup.y = snack.y
+  gup.vx = gup.vy = gup.vz = 0
+  let landed = false
+  const startHp = snack.hp
+  for (let i = 0; i < 24 && !landed; i++) {
+    const ev = step(hunter, 0.05, { ax: 0, ay: 0, jump: false, bite: true, dig: false, use: false, ink: false, forward: 1 })
+    if (ev.some((e) => e.t === 'hit' || e.t === 'eat') || snack.hp < startHp || !snack.alive) landed = true
+  }
+  if (!landed) throw new Error('a reasonably aimed guppy bite should land on nearby fry without placing the mouth on them')
+  const grown = starterLoad()
+  grown.size = 0.92
+  grown.lungs = 1
+  if (youngBite(grown, 12)) throw new Error('a mid-game save should not use the guppy bite cone')
+  console.log('unassisted guppy bite lands')
+}
