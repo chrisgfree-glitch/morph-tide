@@ -284,3 +284,29 @@ console.log('pickup refunds without a free replacement; refunds persist')
   if (youngBite(grown, 12)) throw new Error('a mid-game save should not use the guppy bite cone')
   console.log('unassisted guppy bite lands')
 }
+
+{
+  const mid = createWorld()
+  const you = playerOf(mid)
+  you.spent = 12
+  you.ep = 18
+  you.load.size = 0.92
+  you.load.lungs = 1
+  you.bag = { stone: 2 }
+  you.x = 42.5
+  mid.eats = 2
+  mid.gateOpen = true
+  const raw = serializeGameSave(encodeGameSave(mid))
+  const fresh = createWorld()
+  const data = parseGameSave(raw)
+  if (!data) throw new Error('mid-game banner parse failed')
+  applyGameSave(fresh, data)
+  if (/tiny guppy/i.test(fresh.banner)) throw new Error('mid-game load should not keep the tiny-guppy banner')
+  const pup = playerOf(createWorld())
+  if (!/tiny guppy/i.test(createWorld().banner) && pup.spent === 0) {
+    /* new worlds still get the starter banner */
+  }
+  const nw = createWorld()
+  if (!/tiny guppy/i.test(nw.banner)) throw new Error('new games should still greet a guppy')
+  console.log('mid-game load hides the guppy banner')
+}

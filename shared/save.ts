@@ -95,6 +95,11 @@ export function applyGameSave(w: World, data: GameSave): void {
   if (typeof data.time === 'number' && Number.isFinite(data.time)) w.time = data.time
   if (data.terrain) importCarves(data.terrain)
   applyWorldSnapshot(w, data)
+  const guppy = you.spent < 12 && you.load.legs === 0 && you.load.size <= 0.55
+  if (!guppy && /tiny guppy/i.test(w.banner)) {
+    w.banner = ''
+    w.bannerT = 0
+  }
 }
 
 export function parseGameSave(raw: string): GameSave | null {

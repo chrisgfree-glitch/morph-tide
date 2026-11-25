@@ -310,10 +310,31 @@ function rockMaterial(): THREE.MeshStandardMaterial {
       tex.colorSpace = i === 0 ? THREE.SRGBColorSpace : THREE.NoColorSpace
       tex.generateMipmaps = true
       tex.anisotropy = 4
-      if (i === 0) mat.map = tex
-      else if (i === 1) {
+      if (i === 0) {
+        const img = tex.image as HTMLImageElement | ImageBitmap
+        const c = document.createElement('canvas')
+        c.width = (img as { width: number }).width
+        c.height = (img as { height: number }).height
+        const ctx = c.getContext('2d')!
+        ctx.drawImage(img as CanvasImageSource, 0, 0)
+        const pix = ctx.getImageData(0, 0, c.width, c.height)
+        const d = pix.data
+        for (let p = 0; p < d.length; p += 4) {
+          d[p] = Math.min(255, d[p]! * 5 + 96)
+          d[p + 1] = Math.min(255, d[p + 1]! * 5 + 108)
+          d[p + 2] = Math.min(255, d[p + 2]! * 4.2 + 88)
+        }
+        ctx.putImageData(pix, 0, 0)
+        const lifted = new THREE.CanvasTexture(c)
+        lifted.wrapS = lifted.wrapT = THREE.RepeatWrapping
+        lifted.colorSpace = THREE.SRGBColorSpace
+        lifted.generateMipmaps = true
+        lifted.anisotropy = 4
+        mat.map = lifted
+        tex.dispose()
+      } else if (i === 1) {
         mat.normalMap = tex
-        mat.normalScale = new THREE.Vector2(0.35, 0.35)
+        mat.normalScale = new THREE.Vector2(0.28, 0.28)
       } else mat.roughnessMap = tex
       mat.needsUpdate = true
     })
