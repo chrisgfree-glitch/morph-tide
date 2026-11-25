@@ -195,6 +195,11 @@ export class Chiptune {
     this.last.swim = now
     this.counts.swim = (this.counts.swim ?? 0) + 1
     this.whoosh(0.018 + 0.022 * Math.min(1, speed01))
+    // a few soft trailing bubbles, random pitch so it never sounds looped
+    const n = 1 + Math.floor(Math.random() * (speed01 > 0.6 ? 3 : 2))
+    for (let i = 0; i < n; i++) {
+      this.bubble(480 + Math.random() * 420, 0.05 + Math.random() * 0.04, 0.006 + Math.random() * 0.004, 0.08 + i * (0.07 + Math.random() * 0.06))
+    }
   }
 
   private play(kind: string): void {
