@@ -187,7 +187,7 @@ export class Game {
       }
       this.keys.add(e.key.toLowerCase())
       if (e.key === 'Escape') {
-        if (!this.closeTopMenu() && this.playing) this.toggleSelect(true)
+        if (!this.closeTopMenu() && this.playing) this.toggleEvo(true)
         return
       }
       if (inMenu) return
@@ -403,7 +403,10 @@ export class Game {
     document.getElementById('evo-octo')?.addEventListener('click', () => this.pickBranch('octopus'))
     document.getElementById('evo-prompt-yes')?.addEventListener('click', () => this.confirmSwap(true))
     document.getElementById('evo-prompt-no')?.addEventListener('click', () => this.confirmSwap(false))
-    document.getElementById('t-select')?.addEventListener('click', () => this.toggleEvo())
+    document.getElementById('t-select')?.addEventListener('pointerdown', (e) => {
+      e.preventDefault()
+      this.toggleEvo()
+    })
     document.getElementById('t-pause')?.addEventListener('click', () => this.togglePause())
     document.getElementById('pause-map')?.addEventListener('click', () => {
       this.togglePause(false)
@@ -606,13 +609,21 @@ export class Game {
     const hold = (id: string, down: () => void, up: () => void) => {
       const el = document.getElementById(id)
       if (!el) return
+      let pid = -1
       el.addEventListener('pointerdown', (e) => {
         e.preventDefault()
+        pid = e.pointerId
+        try { el.setPointerCapture(e.pointerId) } catch { /* pointer already ended */ }
         down()
       })
-      el.addEventListener('pointerup', up)
-      el.addEventListener('pointercancel', up)
-      el.addEventListener('pointerleave', up)
+      const end = (e: PointerEvent) => {
+        if (pid !== -1 && e.pointerId !== pid) return
+        pid = -1
+        up()
+      }
+      // Do not clear on pointerleave: a slight finger slide or the stick overlapping would cancel Rise.
+      el.addEventListener('pointerup', end)
+      el.addEventListener('pointercancel', end)
     }
     hold('t-bite', () => this.keys.add('j'), () => this.keys.delete('j'))
     hold('t-up', () => { this.riseHeld = true }, () => { this.riseHeld = false })
@@ -1858,7 +1869,7 @@ export class Game {
     const fwd = Math.max(-1, Math.min(1, moveF))
     const ax = Math.max(-1, Math.min(1, moveS))
     const lookClimb = Math.max(-1, Math.min(1, Math.sin(this.pitch) * 1.25))
-    const ay = dive ? -1 : jump ? 1 : lookClimb
+    const ay = jump ? 1 : dive ? -1 : lookClimb
     const ease = 1 - Math.exp(-dt * 22)
     this.sAx += (ax - this.sAx) * ease
     this.sAy += (fwd - this.sAy) * ease
@@ -1873,7 +1884,7 @@ export class Game {
     return {
       ax: this.sAx,
       ay,
-      jump: jump || lookClimb > 0.2,
+      jump: jump || (!dive && lookClimb > 0.2),
       bite,
       dig: k.has('f') || dig,
       use: k.has('g') || use,
@@ -1881,7 +1892,7 @@ export class Game {
       dash: this.dashT > 0.12 || this.gp.dash,
       horn: this.hornT > 0.1 || this.gp.horn,
       forward: this.sAy,
-      dive: dive || lookClimb < -0.2,
+      dive: dive || (!jump && lookClimb < -0.2),
       sprint,
     }
   }
@@ -2524,6 +2535,7 @@ export function mount(): Game | null {
     },
     toggleBuild: (on?: boolean) => game.toggleBuild(on),
     toggleLock: () => game.toggleLock(),
+    toggleEvo: (on?: boolean) => game.toggleEvo(on),
     toggleSelect: (on?: boolean) => game.toggleSelect(on),
     togglePause: (on?: boolean) => game.togglePause(on),
     toggleQuit: (on?: boolean) => game.toggleQuit(on),

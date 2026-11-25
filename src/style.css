@@ -368,7 +368,7 @@ input { background: #1a2a30; color: #e7e0d4; border: 2px solid #d7cbb8; padding:
 .evo-prompt[hidden] { display: none !important; }
 .evo-prompt-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
-#t-select, #t-pause { pointer-events: auto; }
+#t-select, #t-pause { pointer-events: auto; touch-action: manipulation; }
 @media (max-height: 520px) {
   .evo-stage { grid-template-columns: 1fr 34%; }
   #evo-preview { min-height: 140px; }

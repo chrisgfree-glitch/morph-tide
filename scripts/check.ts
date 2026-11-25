@@ -799,6 +799,37 @@ console.log('all checks ok')
 }
 
 {
+  const idle = { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 0 }
+  const w = createWorld()
+  const you = playerOf(w)
+  you.x = 20
+  you.y = 2.6
+  you.z = 0
+  you.vx = 0
+  you.vy = 0
+  you.vz = 0
+  const y0 = you.y
+  for (let i = 0; i < 18; i++) step(w, 1 / 30, { ...idle, jump: true, ay: 1 })
+  if (you.y < y0 + 0.8) throw new Error(`holding rise in mid-water should climb, y ${y0.toFixed(2)} -> ${you.y.toFixed(2)}`)
+  // Look-down used to set dive=true while Rise was held, which made rise lose in sim.
+  you.y = 2.6
+  you.vy = 0
+  const mid = you.y
+  for (let i = 0; i < 18; i++) step(w, 1 / 30, { ...idle, jump: true, ay: 1, dive: true })
+  if (you.y < mid + 0.8) throw new Error(`rise must win over look-down auto-dive, y ${mid.toFixed(2)} -> ${you.y.toFixed(2)}`)
+  // Near the surface, repeated rise holds should still lift, not get stuck under the waterline.
+  you.y = WATER - 0.4
+  you.vy = 0
+  const near = you.y
+  for (let n = 0; n < 3; n++) {
+    for (let i = 0; i < 10; i++) step(w, 1 / 30, { ...idle, jump: true, ay: 1 })
+    for (let i = 0; i < 4; i++) step(w, 1 / 30, idle)
+  }
+  if (you.y <= near) throw new Error(`repeated rise near the surface should still work, y ${near.toFixed(2)} -> ${you.y.toFixed(2)}`)
+  console.log('rise climbs mid-water, beats auto-dive, and works near the surface', you.y.toFixed(2))
+}
+
+{
   const w = createWorld()
   const you = playerOf(w)
   you.ep = 500

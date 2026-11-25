@@ -722,7 +722,9 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   const slow = you.slow > 0 ? 0.55 : 1
   const dryUnder = isDryLand(you.x, you.z)
   // Stay in the water a little past the surface so gravity and buoyancy do not fight every frame.
-  const submerged = !dryUnder && you.y < WATER + (you.y < WATER ? 0.16 : -0.08)
+  // Holding rise keeps swim control slightly above the waterline so a surface bob does not drop you into gravity.
+  const rising = !!(input.jump && !input.dive)
+  const submerged = !dryUnder && you.y < WATER + (rising ? 0.55 : (you.y < WATER ? 0.16 : -0.08))
   if (!landOk(you.load, you.spent) && you.x >= shoreX(you.z) - 4 && !w.shoreWarned) {
     w.shoreWarned = true
     w.banner = ashoreNeed()
@@ -732,7 +734,8 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   const drag = (0.85 + box.mass * 0.5 + you.load.fin * 0.14) / (you.slow > 0 ? 0.7 : 1)
   const fwd = you.stun > 0 ? 0 : Math.max(-1, Math.min(1, input.forward ?? 0))
   const strafe = you.stun > 0 ? 0 : Math.max(-1, Math.min(1, input.ax))
-  const rise = input.dive ? -1 : input.ay !== 0 ? input.ay : input.jump ? 1 : 0
+  // Explicit rise (Space / A / RB / Rise) must win over look-down auto-dive.
+  const rise = input.jump ? 1 : input.dive ? -1 : input.ay !== 0 ? input.ay : 0
   const pitch = submerged ? you.pitch : 0
   const cp = Math.cos(pitch)
   const sp = Math.sin(pitch)
@@ -788,7 +791,7 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     if (!submerged) you.vy = Math.max(you.vy, 2.1 / Math.sqrt(box.mass))
     you.biteCd = Math.max(you.biteCd, 0.12)
   }
-  if (submerged && input.jump && you.y > WATER - 1.15) {
+  if (!dryUnder && input.jump && !input.dive && you.y > WATER - 1.15 && you.y < WATER + 1.0) {
     you.vy = Math.max(you.vy, 6.4 / Math.sqrt(box.mass))
   }
   if (input.horn && you.windup <= 0 && you.recover <= 0) {
