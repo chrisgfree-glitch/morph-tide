@@ -480,3 +480,65 @@ contrast.
 Known issues / leftover: the first-run hint can still say “tiny guppy” after
 loading a mid-game save in a clean profile; some rock faces still read dark
 under SwiftShader; unassisted start-of-game bites can still miss.
+
+## Play-feel pass — guppy bites, mid-game hint, mossy rocks (4:30 PM PT)
+
+Chris approved in chat at 4:14 PM PT (“Keep fixing the game”) and asked to
+push live. Branch `coding-guy/play-feel` from then-current `main` (`f4a8666`).
+
+### What changed
+
+Early guppy bites use a generous mouth volume and a mouth-cone fallback, plus
+stronger yaw assist and a short magnetism pull toward the nearest prey in
+front. Hit flashes also fire on eats. Auto-forward eases off when prey is
+close so the guppy does not swim past the fry. Mid-game hunters keep the
+tighter volumes.
+
+The first-run “tiny guppy” hint, the Eat 5 fish goal, and the starter banner
+only appear on a new guppy (spent < 12, no legs, size ≤ 0.55). Loading a
+mid-game `evo2.eden.v2` save does not set `evo2.hinted`, so a later new game
+can still see the hint.
+
+The stock rock color map averaged nearly black (about RGB 16, 26, 29) and
+crushed back faces. It is lifted on load, shadows are off on rock instances,
+and fill/emissive are higher so the rocks read as mossy stone from all sides.
+
+A short first-minutes playtest found harvest and dig warnings were either
+silent or could flood every frame (for example “Need a cutting jaw…” on
+driftwood). Those notes now show once on the banner. Digging is still a tier 3
+unlock, so the first den is the Lean-to (2 kelp) and dig was not reachable in
+the opening minutes.
+
+### Preview and production
+
+`npm run check` and `npm run build` passed, including an unassisted guppy-bite
+unit test (face fry about 1.65m away, no mouth teleport). Preview (target
+omitted) of `2b24692`: `dpl_7uCbPz9zBRUoh1FjjXSfjXgeU3yq`,
+https://evo-back-to-eden-6qewbvf1f-chrisgfree-5870.vercel.app
+(earlier preview of `d679068` was `dpl_GG5KMvsy8wAgL5P4LzCihCSqks4q`).
+
+`main` was fast-forwarded and a production deployment was created with
+`target: "production"` of the same commit. Ready at 4:30 PM PT. Env vars,
+protection, domains, and secrets were not changed.
+
+- Production URL: https://evo-back-to-eden.vercel.app/
+- Also: https://evo-back-to-eden-chrisgfree-5870.vercel.app
+- Deployment id: `dpl_GM3GeMP7jFmQXzkw7VKAXFp7BbFg`
+- Commit: `2b24692` (`2b2469274e1b8bb26187badcd5c5f67c9fa7e33d`)
+
+Playwright (Chrome + SwiftShader) at 1280×800 and 844×390 against the preview,
+then production: unscripted swim-and-bite (no manual mouth placement), new-game
+hint vs mid-game save, rock look, Select/Pause/Save, and the three key paths.
+All passed both sizes on preview. Production phone passed first try; desktop
+unscripted bite missed once on the production alias (short window), then
+landed on a retry against the unique production host.
+
+Preview screenshots: `smoke/r6b-desktop-*.png`, `smoke/r6b-phone-land-*.png`.
+Production screenshots: `smoke/r6-prod-desktop-*.png`, `smoke/r6-prod-phone-land-*.png`.
+
+Not verified: a physical Xbox pad or phone; first-minutes dig (still locked
+until tier 3); WCAG contrast.
+
+Known issues / leftover: some kelp blades still read dark edge-on under
+SwiftShader; a first eat can take a few nips (guppy bite 2 vs fry HP 5);
+`20b4663` lighting is still absent from this repo and was not imported.
