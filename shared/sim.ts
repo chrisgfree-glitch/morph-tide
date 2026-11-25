@@ -966,10 +966,11 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   }
   const wantBite = (input.bite || you.biteBuf > 0 || autoContact) && you.biteCd <= 0 && you.windup <= 0 && you.recover <= 0 && you.stun <= 0
   if (wantBite) {
+    const manual = !!(input.bite || you.biteBuf > 0)
     you.biteBuf = 0
     you.windup = you.combo >= 2 ? 0.07 : 0.03
     you.biteT = you.windup + 0.18
-    you.biteCd = 0.04
+    you.biteCd = manual ? 0.04 : 0.55
     const aim = nearestInCone(w, you)
     const bossUp = w.ents.find((e) => e.kind === 'boss' && e.alive)
     const nearBoss = !!(bossUp && Math.hypot((bossUp.x - you.x), (bossUp.z ?? 0) - you.z) < 48)

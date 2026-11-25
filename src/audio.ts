@@ -26,7 +26,7 @@ export type SfxKind =
 
 const COOLDOWN: Record<string, number> = {
   bite: 0.32,
-  hit: 0.4,
+  hit: 0.7,
   hurt: 0.45,
   eat: 0.4,
   heal: 0.7,
@@ -160,6 +160,41 @@ export class Chiptune {
 
   private bubble(freq: number, dur: number, gain: number, delay = 0): void {
     this.tone(freq, dur, 'sine', gain, delay, -freq * 0.35)
+  }
+
+  /** Soft water whoosh: filtered noise swell, no click. */
+  private whoosh(gain: number, dur = 0.42): void {
+    if (!this.ctx) return
+    const t = this.ctx.currentTime
+    const len = Math.floor(this.ctx.sampleRate * dur)
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate)
+    const data = buf.getChannelData(0)
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1
+    const src = this.ctx.createBufferSource()
+    src.buffer = buf
+    const bp = this.ctx.createBiquadFilter()
+    bp.type = 'bandpass'
+    bp.Q.value = 0.8
+    bp.frequency.setValueAtTime(320, t)
+    bp.frequency.exponentialRampToValueAtTime(620, t + dur * 0.5)
+    bp.frequency.exponentialRampToValueAtTime(260, t + dur)
+    const amp = this.ctx.createGain()
+    amp.gain.setValueAtTime(0.0001, t)
+    amp.gain.exponentialRampToValueAtTime(gain, t + dur * 0.4)
+    amp.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+    src.connect(bp); bp.connect(amp); amp.connect(this.dest())
+    src.start(t); src.stop(t + dur + 0.02)
+  }
+
+  /** Swim strokes: paced by speed, never blocks combat sounds. */
+  swim(speed01: number): void {
+    if (!this.ctx || this.muted || speed01 < 0.15) return
+    const now = this.ctx.currentTime
+    const gap = 0.75 - 0.35 * Math.min(1, speed01)
+    if (now - (this.last.swim ?? -99) < gap) return
+    this.last.swim = now
+    this.counts.swim = (this.counts.swim ?? 0) + 1
+    this.whoosh(0.018 + 0.022 * Math.min(1, speed01))
   }
 
   private play(kind: string): void {

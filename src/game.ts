@@ -1519,7 +1519,7 @@ export class Game {
     const you = playerOf(this.world)
     const inWater = you.region === 'sea' || you.y < 5.8
     const show = this.phoneLayout() && (!this.padOn || this.touchForced)
-    for (const id of ['t-act', 't-dash', 't-horn', 't-build', 't-bite', 't-evo', 't-settings', 't-map']) {
+    for (const id of ['t-act', 't-dash', 't-horn', 't-evo', 't-settings', 't-map']) {
       const el = document.getElementById(id)
       if (el) el.hidden = true
     }
@@ -1531,6 +1531,10 @@ export class Game {
     if (dive) dive.hidden = !show || !inWater
     if (sel) sel.hidden = !show
     if (pause) pause.hidden = !show
+    const atk = document.getElementById('t-bite')
+    const menu = document.getElementById('t-build')
+    if (atk) atk.hidden = !show
+    if (menu) menu.hidden = !show
   }
 
   private revealTouch(): void {
@@ -1912,6 +1916,10 @@ export class Game {
     if (this.world.hitStop > 0) this.world.hitStop = Math.max(0, this.world.hitStop - dt)
     else if (this.playing && !this.paused && !this.evoOpen && !this.selectOpen && !this.pauseOpen && !this.quitOpen && !this.mapOpen && !this.world.over) {
       const ev = step(this.world, dt, this.gather(dt))
+      {
+        const me = playerOf(this.world)
+        if (me.region === 'sea' || me.y < 5.6) audio.swim(Math.hypot(me.vx, me.vz, me.vy) / 4)
+      }
       for (const e of ev) {
         const sfx = this.sfxFor(e.t)
         if (sfx) this.feel(sfx)

@@ -160,13 +160,13 @@ export function readPad(pad: PadLike | null, prev: boolean[], layer: PadLayer, n
   }
 
   if (layer === 'build') {
-    frame.cyclePrev = (e[BTN.LB] ?? false) || (e[BTN.LEFT] ?? false)
-    frame.cycleNext = (e[BTN.RB] ?? false) || (e[BTN.RIGHT] ?? false)
-    frame.rotateUp = e[BTN.UP] ?? false
-    frame.rotateDown = e[BTN.DOWN] ?? false
+    frame.cyclePrev = e[BTN.LEFT] ?? false
+    frame.cycleNext = e[BTN.RIGHT] ?? false
+    frame.rotateUp = e[BTN.RB] ?? false
+    frame.rotateDown = e[BTN.LB] ?? false
     frame.place = (e[BTN.A] ?? false) || (e[BTN.RT] ?? false)
     frame.pickup = e[BTN.X] ?? false
-    frame.leaveBuild = (e[BTN.B] ?? false) || (e[BTN.Y] ?? false)
+    frame.leaveBuild = (e[BTN.B] ?? false) || (e[BTN.Y] ?? false) || (e[BTN.DOWN] ?? false)
     frame.sprint = h[BTN.L3] ?? false
     frame.bite = false
     frame.dash = false
@@ -175,36 +175,31 @@ export function readPad(pad: PadLike | null, prev: boolean[], layer: PadLayer, n
 
   // play
   frame.bite = h[BTN.RT] ?? false
-  frame.sprint = (h[BTN.LT] ?? false) || (h[BTN.L3] ?? false)
-  frame.horn = e[BTN.LB] ?? false
+  frame.sprint = h[BTN.L3] ?? false
+  frame.horn = e[BTN.LT] ?? false
   frame.dash = e[BTN.B] ?? false
   frame.dig = h[BTN.X] ?? false
   frame.use = h[BTN.X] ?? false
-  frame.rise = (h[BTN.A] ?? false) || (h[BTN.UP] ?? false)
-  frame.dive = (h[BTN.RB] ?? false) || (h[BTN.DOWN] ?? false)
-  frame.evolve = e[BTN.LEFT] ?? false
-  frame.build = e[BTN.Y] ?? false
-  frame.lock = (e[BTN.R3] ?? false) || (e[BTN.RIGHT] ?? false)
+  frame.rise = (h[BTN.A] ?? false) || (h[BTN.RB] ?? false)
+  frame.dive = h[BTN.LB] ?? false
+  frame.build = (e[BTN.Y] ?? false) || (e[BTN.UP] ?? false)
+  frame.lock = e[BTN.R3] ?? false
   return { frame, prev: snap.next, navLatch: false }
 }
 
 export const PAD_HELP = [
   'Left stick — move',
   'Right stick — camera',
-  'RT — bite',
-  'LT — boost (sprint)',
-  'A — jump / confirm',
-  'B — dash; leaves build without dashing; back in menus',
-  'X — dig / gather; pick up in build',
-  'Y — build; also leaves build',
-  'D-pad Left — Evolve',
-  'D-pad Up/Down — rise/dive; rotate in build',
-  'D-pad Right — lock on',
-  'LB — horn; cycle pieces in build',
-  'RB — dive; cycle pieces in build',
-  'L3 — sprint',
-  'R3 — lock on',
-  'Start — pause',
-  'View — Select',
+  'RT — attack (bite)',
+  'LT — second attack (tail / horn lunge)',
+  'A — jump on land, rise in water; confirm',
+  'RB — rise    LB — dive',
+  'B — dodge; back in menus',
+  'X — interact, gather, pick up',
+  'Y — menu (build & craft)',
+  'D-pad Up — open build menu; Left / Right — cycle options; Down — put away',
+  'In build: RB / LB rotate, A or RT place',
+  'L3 — boost    R3 — lock on',
+  'Start — pause    View — Select (Evolve)',
   'In menus: D-pad or left stick to move, A to confirm, B to back',
 ] as const
