@@ -5,7 +5,7 @@ import type { Piece } from './build'
 import { attackVolumes, bodyBox, mouthHit, volumeHits, youngBite } from './body'
 import { CHUNK, WATER, WORLD_Z, carve, fill, groundAt } from './terrain'
 import { buySkin, buySpec, canDig, cellSeconds, chopSeconds, compute, defenseCap, gemChance, landOk, purchase, pvpFactor, tierOf, type Buy, type Progress } from './rules'
-import { agility, incomingMissChance, morphFx, morphOf, tryBuy, type BuyResult } from './evolve'
+import { agility, ashoreNeed, incomingMissChance, morphFx, morphOf, tryBuy, type BuyResult } from './evolve'
 import { createSpawners, kindById, mulberry32, seedSpawners, stepSpawners, type SpawnRequest, type Spawner } from './prey'
 import { createHealPlants, stepHealPlants, tryEatPlant, type HealPlant } from './plants'
 import { addDrops, forageDrop, gearFx, spendCraft } from './craft'
@@ -156,6 +156,8 @@ export interface World {
   cairns: Placeable[]
   lures: Placeable[]
   nest: Placeable | null
+  bossUnlocked: boolean
+  shoreWarned: boolean
 }
 
 export interface Frame {
@@ -433,6 +435,36 @@ function stepCraftables(w: World, dt: number, ev: Evt[], you: Ent): void {
   void gear
 }
 
+
+export const BOSS_X = 142
+export const BOSS_Z = 0
+
+function spawnColossus(w: World, ev: Evt[], announce: boolean): void {
+  if (w.ents.some((e) => e.kind === 'boss') || w.won) return
+  const load = starterLoad()
+  load.jaw = 'croc'
+  load.armor = 3
+  load.size = 1.8
+  load.legs = 6
+  load.feet = 'claw'
+  load.lungs = 1
+  w.ents.push(make({ id: w.nextId++, kind: 'boss', name: 'Strand Colossus', species: 'boss', x: BOSS_X, y: 1.4, z: BOSS_Z, region: 'land', spent: 140, load, bias: 80, maxHp: 170 }))
+  if (announce) {
+    w.banner = 'The Strand Colossus waits inland.'
+    w.bannerT = 4
+    ev.push({ t: 'note', x: BOSS_X, y: 2, text: 'The Strand Colossus waits inland' })
+  }
+}
+
+function unlockBoss(w: World, ev: Evt[], you: Ent): void {
+  if (w.bossUnlocked) return
+  w.bossUnlocked = true
+  spawnColossus(w, ev, false)
+  w.banner = 'Boss unlocked — follow the marker inland to the Strand Colossus.'
+  w.bannerT = 7
+  ev.push({ t: 'boss-unlock', x: you.x, y: you.y, text: 'Boss unlocked' })
+}
+
 export function createWorld(): World {
   const w: World = {
     ents: [],
@@ -464,6 +496,8 @@ export function createWorld(): World {
     cairns: [],
     lures: [],
     nest: null,
+    bossUnlocked: false,
+    shoreWarned: false,
   }
   w.ents.push(make({ id: w.nextId++, kind: 'player', name: 'Tidewisp', species: 'you', x: 8, y: 2.4 }))
   seedPrey(w)
@@ -628,7 +662,17 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   const box = bodyBox(you.load, you.spent, false, you.species)
   const ground = 1.12
   const slow = you.slow > 0 ? 0.55 : 1
-  if (!landOk(you.load, you.spent)) you.x = Math.min(you.x, 66)
+  if (!landOk(you.load, you.spent)) {
+    if (you.x >= 64.5 && !w.shoreWarned) {
+      w.shoreWarned = true
+      w.banner = ashoreNeed()
+      w.bannerT = 6
+      ev.push({ t: 'note', x: you.x, y: you.y, text: 'The shore is closed until you can breathe on land.' })
+    }
+    you.x = Math.min(you.x, 66)
+  } else if (!w.bossUnlocked) {
+    unlockBoss(w, ev, you)
+  }
   const submerged = you.x < 68 && you.y < WATER
   const drag = (0.85 + box.mass * 0.5 + you.load.fin * 0.14) / (you.slow > 0 ? 0.7 : 1)
   const fwd = you.stun > 0 ? 0 : Math.max(-1, Math.min(1, input.forward ?? 0))
@@ -741,6 +785,10 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   you.y = Math.max(0.35, Math.min(12, you.y))
   you.x = Math.max(2, Math.min(480, you.x))
   you.z = Math.max(-WORLD_Z + 1, Math.min(WORLD_Z - 1, you.z))
+  if (!landOk(you.load, you.spent)) {
+    you.x = Math.min(you.x, 66)
+    if (you.x >= 66) you.vx = Math.min(you.vx, 0)
+  }
   const colossus = w.ents.find((e) => e.kind === 'boss' && e.alive)
   if (colossus && you.x > colossus.x - 5 && you.x < colossus.x + 6) {
     you.x = colossus.x - 5
@@ -903,18 +951,8 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
       ev.push({ t: 'down', x: you.x, y: you.y, text: 'The body fails' })
     }
   }
-  if (!w.ents.some((e) => e.kind === 'boss' && e.alive) && you.x > 128 && !w.won && !w.ents.some((e) => e.kind === 'boss')) {
-    const load = starterLoad()
-    load.jaw = 'croc'
-    load.armor = 3
-    load.size = 1.8
-    load.legs = 6
-    load.feet = 'claw'
-    load.lungs = 1
-    w.ents.push(make({ id: w.nextId++, kind: 'boss', name: 'Strand Colossus', species: 'boss', x: 142, y: 1.4, region: 'land', spent: 140, load, bias: 80, maxHp: 170 }))
-    w.banner = 'Strand Colossus'
-    w.bannerT = 3
-  }
+  if (landOk(you.load, you.spent) && !w.bossUnlocked) unlockBoss(w, ev, you)
+  if (you.x > 120 && !w.ents.some((e) => e.kind === 'boss') && !w.won) spawnColossus(w, ev, true)
   const boss = w.ents.find((e) => e.kind === 'boss')
   if (boss && !boss.alive && !w.gateOpen) {
     w.gateOpen = true

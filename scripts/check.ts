@@ -7,7 +7,7 @@ import { RECIPES, canCraft, spendCraft, gearFx, forageDrop } from '../shared/cra
 import { landOk } from '../shared/rules'
 import { columnSeconds } from '../shared/dig'
 import { attackVolumes, bodyScale, volumeHits, youngBite } from '../shared/body'
-import { applyWorldSnapshot, createWorld, playerOf, snapshotWorld, step } from '../shared/sim'
+import { applyMorphBuy, applyWorldSnapshot, createWorld, playerOf, snapshotWorld, step } from '../shared/sim'
 import { applyGameSave, encodeGameSave, parseGameSave, serializeGameSave } from '../shared/save'
 import { BTN, deadzone, readPad, type PadLike } from '../shared/pad'
 import { canPlace, placePiece, refundPiece } from '../shared/build'
@@ -500,6 +500,37 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
   walker.load.morph.limb = 'webbed'
   if (!landOk(walker.load, walker.spent)) throw new Error('webbed limbs should allow land movement')
   console.log('evolve redesign, prey, plants, trees, craft, land movement')
+}
+
+{
+  const w = createWorld()
+  const you = playerOf(w)
+  you.spent = 200
+  you.x = 80
+  you.y = 1.2
+  if (landOk(you.load, you.spent)) throw new Error('high spent without lungs or limbs must not go ashore')
+  step(w, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
+  if (you.x > 66) throw new Error(`shore must pin at 66 without lungs, got ${you.x}`)
+  if (!w.shoreWarned || !/lungs|land limbs/i.test(w.banner)) throw new Error(`shore should say lungs or land limbs, got "${w.banner}"`)
+  you.ep = 20
+  const buy = applyMorphBuy(you, 'lungs')
+  if (!buy.ok) throw new Error(`lungs should be buyable: ${buy.reason}`)
+  if (!landOk(you.load, 0)) throw new Error('lungs must allow land without a tier gate')
+  step(w, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 0 })
+  if (!w.bossUnlocked) throw new Error('buying lungs should unlock the first boss')
+  if (!w.ents.some((e) => e.kind === 'boss')) throw new Error('Colossus should spawn as soon as the boss is unlocked, not only after x>128')
+  if (!/Boss unlocked/i.test(w.banner)) throw new Error(`should announce Boss unlocked, got "${w.banner}"`)
+  you.x = 70
+  step(w, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
+  if (you.x < 70) throw new Error('player with lungs must be able to leave the water')
+  you.x = 130
+  you.y = 1.2
+  step(w, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
+  if (you.x <= 128) throw new Error(`normal lungs playthrough should reach x>128, got ${you.x}`)
+  const colossus = w.ents.find((e) => e.kind === 'boss' && e.alive)
+  if (!colossus) throw new Error('Strand Colossus should be waiting inland after a lungs playthrough')
+  if (Math.abs(colossus.x - 142) > 1) throw new Error('Colossus should wait near x=142')
+  console.log('lungs unlock land, Boss unlocked, and a playthrough reaches x>128')
 }
 
 console.log('all checks ok')

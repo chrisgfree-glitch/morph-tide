@@ -1,5 +1,5 @@
 import type { Loadout, Pick, Step } from './catalog'
-import { applyMorphStats, morphFx } from './evolve'
+import { applyMorphStats, canGoAshore } from './evolve'
 import {
   ARM_COST,
   ARM_TYPES,
@@ -232,9 +232,8 @@ export function canDig(load: Loadout, spent: number): boolean {
   return arms === 'spade' || arms === 'claw' || feet === 'claw' || feet === 'sickle' || feet === 'elephant'
 }
 
-export function landOk(load: Loadout, spent: number): boolean {
-  if (load.morph && morphFx(load.morph).landMove) return true
-  return tierOf(spent) >= 2 && load.lungs >= 1
+export function landOk(load: Loadout, _spent?: number): boolean {
+  return canGoAshore(load)
 }
 
 export interface Buy {

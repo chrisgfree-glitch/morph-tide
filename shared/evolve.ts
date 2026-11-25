@@ -6,7 +6,7 @@ import { starterLoad, type Loadout } from './catalog'
 import type { Progress, Stats } from './rules'
 
 export type Branch = 'guppy' | 'fish' | 'octopus'
-export type Category = 'skin' | 'head' | 'horn' | 'fin' | 'dorsal' | 'rear' | 'extraRear' | 'tail' | 'limb'
+export type Category = 'skin' | 'head' | 'horn' | 'fin' | 'dorsal' | 'rear' | 'extraRear' | 'tail' | 'limb' | 'lungs'
 export type Place = 'side' | 'belly' | 'back' | 'rear' | 'side+belly'
 
 export interface Morph {
@@ -26,6 +26,8 @@ export interface Morph {
   extraRear: number
   tail: string
   limb: string
+  /** Shared — lets any branch go ashore and reach the first boss. */
+  lungs: string
   /** Full EP actually paid, keyed like "skin:scales" or "horn:lance:2". */
   paid: Record<string, number>
 }
@@ -56,6 +58,7 @@ export interface PartDef {
   thorns?: number
   dmgReduce?: number
   heat?: number
+  air?: number
   /** Turn-rate bonus (maneuverability). */
   turn?: number
   /** Acceleration bonus (agility). */
@@ -131,6 +134,7 @@ export function emptyMorph(): Morph {
     extraRear: 0,
     tail: 'fantail',
     limb: '',
+    lungs: '',
     paid: {},
   }
 }
@@ -198,6 +202,14 @@ export const LIMBS: PartDef[] = [
   part('sallegs', 'Salamander Legs', 'limb', 26, { branch: 'octopus', place: 'side+belly', spd: 0.3, hp: 6, desc: 'True walking legs on the sides and belly.', tags: ['land'] }),
 ]
 
+export const LUNGS: PartDef[] = [
+  part('lungs', 'Lungs', 'lungs', 10, {
+    desc: 'Breathe on land. Buy this (or octopus land limbs) to go ashore and reach the Strand Colossus.',
+    tags: ['lungs'],
+    air: 8,
+  }),
+]
+
 export const DORSALS: PartDef[] = [
   part('ridge', 'Low Ridge', 'dorsal', 5, { place: 'back', swim: 0.1, desc: 'A low stabilizing ridge.', tags: [] }),
   part('spinyfin', 'Spiny Dorsal', 'dorsal', 10, { place: 'back', thorns: 1, def: 0.5, desc: 'A row of defensive spines along the back. Distinct from Spiny Fin.', tags: ['thorns'] }),
@@ -230,7 +242,7 @@ export const EXTRA_REAR: PartDef = part('extraRear', 'Extra rear fin', 'extraRea
   tags: ['agility'],
 })
 
-const ALL_PARTS: PartDef[] = [...SKINS, ...HEADS, ...HORNS, ...FINS, ...LIMBS, ...DORSALS, ...REARS, ...TAILS, EXTRA_REAR]
+const ALL_PARTS: PartDef[] = [...SKINS, ...HEADS, ...HORNS, ...FINS, ...LIMBS, ...LUNGS, ...DORSALS, ...REARS, ...TAILS, EXTRA_REAR]
 
 export function allParts(): PartDef[] {
   return ALL_PARTS
@@ -366,6 +378,7 @@ export function morphFx(morph: Morph): MorphFx {
   apply(partById(morph.rear))
   apply(partById(morph.tail))
   apply(partById(morph.limb))
+  apply(partById(morph.lungs))
   if (morph.extraRear > 0) {
     const n = Math.min(2, morph.extraRear)
     const extra = partById('extraRear')
@@ -396,6 +409,7 @@ export function applyMorphStats(s: Stats, morph: Morph): void {
     s.hp += def.hp ?? 0
     s.vision += def.vision ?? 0
     s.heat += def.heat ?? 0
+    s.air += def.air ?? 0
   }
   add(partById(morph.skin))
   add(partById(morph.head === 'guppy' ? '' : morph.head))
@@ -404,6 +418,7 @@ export function applyMorphStats(s: Stats, morph: Morph): void {
   add(partById(morph.dorsal === 'ridge' && morph.branch === 'guppy' ? '' : morph.dorsal))
   add(partById(morph.tail === 'fantail' || (morph.tail === 'fan' && morph.branch === 'guppy') ? '' : morph.tail))
   add(partById(morph.limb))
+  add(partById(morph.lungs))
   add(partById(morph.rear))
   if (morph.skin === 'leather') {
     s.spd *= 0.95
@@ -429,6 +444,7 @@ export function equippedLabel(morph: Morph, cat: Category): string {
   if (cat === 'extraRear') return morph.extraRear ? `${morph.extraRear} / 2 extra rear fins` : 'None'
   if (cat === 'tail') return partById(morph.tail === 'fan' ? 'fantail' : morph.tail)?.name ?? 'Fan'
   if (cat === 'limb') return partById(morph.limb)?.name ?? 'None'
+  if (cat === 'lungs') return partById(morph.lungs)?.name ?? 'None'
   return ''
 }
 
@@ -544,6 +560,7 @@ function alreadyHas(morph: Morph, def: PartDef, level?: number): boolean {
   if (def.category === 'rear') return morph.rear === def.id
   if (def.category === 'tail') return morph.tail === def.id || (def.id === 'fantail' && morph.tail === 'fan')
   if (def.category === 'limb') return morph.limb === def.id
+  if (def.category === 'lungs') return morph.lungs === def.id
   if (def.category === 'extraRear') return morph.extraRear >= 2
   return false
 }
@@ -624,6 +641,12 @@ export function tryBuy(you: Progress, id: string, opts: { confirm?: boolean; lev
     morph.tail = def.id
     return { ok: true, refund: 0, message: `Grew a ${def.name} tail.` }
   }
+  if (def.category === 'lungs') {
+    spend(you, `lungs:${def.id}`, def.cost)
+    morph.lungs = def.id
+    you.load.lungs = Math.max(you.load.lungs, 1)
+    return { ok: true, refund: 0, message: 'Lungs grown. You can go ashore — the first boss is unlocked inland.' }
+  }
   if (def.category === 'limb') {
     if (morph.extraRear > 0) {
       morph.extraRear = 0
@@ -649,6 +672,20 @@ export function agility(morph: Morph): { turn: number; accel: number } {
   return { turn: 1 + fx.turn, accel: 1 + fx.accel }
 }
 
+
+/** Lungs or octopus land limbs. Not gated by evolution tier. */
+export function canGoAshore(load: { morph?: Morph; lungs?: number }): boolean {
+  const morph = load.morph
+  if (morph?.lungs) return true
+  if (morph && morphFx(morph).landMove) return true
+  if ((load.lungs ?? 0) >= 1) return true
+  return false
+}
+
+export function ashoreNeed(): string {
+  return 'Buy Lungs in Evolve, or take octopus land limbs (Webbed Limbs or Salamander Legs), to go ashore.'
+}
+
 export const CATALOG_COUNTS = {
   skins: SKINS.length,
   heads: HEADS.filter((h) => h.id !== 'guppy').length,
@@ -657,4 +694,5 @@ export const CATALOG_COUNTS = {
   dorsals: DORSALS.length,
   rears: REARS.length,
   tails: TAILS.length,
+  lungs: LUNGS.length,
 }

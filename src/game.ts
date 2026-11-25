@@ -1,10 +1,10 @@
 import * as THREE from 'three'
 import { COLOR_NAMES, COLORS, ROCK_TINT, TREE_TINT, TIER_SPENT, treeById } from '../shared/catalog'
-import { applyCraft, applyMorphBuy, createWorld, nearestInCone, playerOf, step, type Ent, type Frame, type World } from '../shared/sim'
+import { applyCraft, applyMorphBuy, BOSS_X, BOSS_Z, createWorld, nearestInCone, playerOf, step, type Ent, type Frame, type World } from '../shared/sim'
 import { readPad, type PadLayer } from '../shared/pad'
 import { SAVE_KEY, applyGameSave, encodeGameSave, parseGameSave, serializeGameSave } from '../shared/save'
 import { PIECES, canPlace, costLine, nearestPiece, pieceById, placePiece, refundPiece } from '../shared/build'
-import { EXTRA_REAR, agility, equippedLabel, morphFx, morphOf, partsIn, switchBranch, type Category } from '../shared/evolve'
+import { EXTRA_REAR, agility, ashoreNeed, canGoAshore, equippedLabel, morphFx, morphOf, partsIn, switchBranch, type Category } from '../shared/evolve'
 import { RECIPES, canCraft } from '../shared/craft'
 import { canDig, compute, fishGoal, growFish, tierOf } from '../shared/rules'
 import { audio } from './audio'
@@ -1132,6 +1132,15 @@ export class Game {
     const branchEl = document.getElementById('evo-branch')
     if (ep) ep.textContent = `${Math.floor(you.ep)} EP`
     if (branchEl) branchEl.textContent = morph.branch === 'guppy' ? 'Guppy' : morph.branch === 'fish' ? 'Fish branch' : 'Octopus branch'
+    const ashoreEl = document.getElementById('evo-ashore')
+    if (ashoreEl) {
+      const ok = canGoAshore(you.load)
+      ashoreEl.textContent = ok
+        ? 'Ashore: ready. Follow the marker inland to the Strand Colossus.'
+        : 'Ashore: need Lungs (this tab) or octopus land limbs (Webbed / Salamander Legs).'
+      ashoreEl.classList.toggle('ready', ok)
+      ashoreEl.classList.toggle('need', !ok)
+    }
     document.getElementById('evo-fish')?.classList.toggle('on', morph.branch === 'fish')
     document.getElementById('evo-octo')?.classList.toggle('on', morph.branch === 'octopus')
     const fx = morphFx(morph)
@@ -1162,6 +1171,7 @@ export class Game {
       { id: 'rear', name: 'Rear Fins' },
       { id: 'tail', name: 'Tails' },
       { id: 'limb', name: 'Limbs' },
+      { id: 'lungs', name: 'Lungs' },
       { id: 'craft', name: 'Craft' },
     ]
     const nav = document.getElementById('evo-cats')
@@ -2292,6 +2302,44 @@ export class Game {
     this.preview?.render(this.previewScene!, cam)
   }
 
+
+  private updateBossMarker(): void {
+    const el = document.getElementById('boss-mark')
+    const arrow = document.getElementById('boss-mark-arrow')
+    const label = document.getElementById('boss-mark-label')
+    if (!el) return
+    if (!this.playing || this.evoOpen || this.pauseOpen || this.selectOpen || this.mapOpen) {
+      el.hidden = true
+      return
+    }
+    const w = this.world
+    const you = playerOf(w)
+    const living = w.ents.find((e) => e.kind === 'boss' && e.alive)
+    const fallen = w.ents.some((e) => e.kind === 'boss' && !e.alive) || w.gateOpen || w.won
+    const unlocked = w.bossUnlocked || canGoAshore(you.load)
+    if (!unlocked || fallen || !living && w.bossUnlocked === false) {
+      el.hidden = true
+      return
+    }
+    const tx = living?.x ?? BOSS_X
+    const tz = living?.z ?? BOSS_Z
+    const dx = tx - you.x
+    const dz = tz - you.z
+    const dist = Math.hypot(dx, dz)
+    if (dist < 7) {
+      el.hidden = true
+      return
+    }
+    el.hidden = false
+    const want = Math.atan2(dz, dx)
+    const rel = want - (this.yaw || you.yaw)
+    let ang = rel
+    while (ang > Math.PI) ang -= Math.PI * 2
+    while (ang < -Math.PI) ang += Math.PI * 2
+    if (arrow) arrow.style.transform = `rotate(${ang}rad)`
+    if (label) label.textContent = `Boss unlocked · ${Math.round(dist)} inland`
+  }
+
   private hud(): void {
     const you = playerOf(this.world)
     const set = (id: string, text: string) => {
@@ -2316,9 +2364,14 @@ export class Game {
         grow.textContent = you.ep < goal.cost ? `Need ${goal.cost} EP for a ${goal.next}` : `Grow a ${goal.next} · ${goal.cost} EP`
       }
     }
-    if (!this.shoreTold && tier >= 3 && you.x >= 66) {
+    if (!this.shoreTold && you.x >= 60 && !canGoAshore(you.load)) {
       this.shoreTold = true
-      this.world.banner = 'The first shore. Next: keep growing inland.'
+      this.world.banner = ashoreNeed()
+      this.world.bannerT = 6
+    }
+    if (!this.shoreTold && canGoAshore(you.load) && you.x >= 60) {
+      this.shoreTold = true
+      this.world.banner = 'The first shore. Follow the marker inland to the Strand Colossus.'
       this.world.bannerT = 8
     }
     const digBtn = document.getElementById('t-act') as HTMLButtonElement | null
@@ -2333,6 +2386,7 @@ export class Game {
       }
     }
     set('banner', this.world.bannerT > 0 ? this.world.banner : '')
+    this.updateBossMarker()
     const lockEl = document.getElementById('lock-tag')
     const lockedPrey = this.world.ents.find((e) => e.id === this.lockId && e.alive)
     if (lockEl) {
@@ -2417,16 +2471,17 @@ export function mount(): Game | null {
 function earlyGoal(w: World, you: Ent, fallback: string): string {
   const guppy = you.spent < 12 && you.load.legs === 0 && you.load.size <= 0.55
   if (guppy && w.eats < 5) return `Eat 5 fish (${w.eats}/5)`
-  if (you.load.lungs < 1) {
-    if (you.spent < 12) return 'Grow lungs — first grow a steelhead, then Evolve (E)'
-    return you.ep >= 6 ? 'Grow lungs — open Evolve (E)' : 'Grow lungs — earn 6 EP, then Evolve (E)'
+  if (!canGoAshore(you.load)) {
+    if (you.ep < 10) return 'Earn 10 EP, then buy Lungs in Evolve (Select) to go ashore'
+    return 'Buy Lungs in Evolve (Select) — or octopus land limbs — to go ashore'
   }
-  const mine = w.bases.some((b) => b.owner === you.id) || w.pieces.some((p) => p.owner === you.id && (p.kind === 'lean' || p.kind === 'den'))
-  if (!mine) return 'Dig a den — gather 2 kelp, then Build (B) and place a lean-to'
-  if (you.x < 66) return 'Reach the first shore'
   const boss = w.ents.find((e) => e.kind === 'boss')
-  if (boss?.alive) return 'The Strand Colossus bars the inland. Defeat it to pass.'
-  if (w.gateOpen && you.x < 168) return 'The inland is open. Keep growing.'
+  if (w.bossUnlocked && boss?.alive) {
+    const dist = Math.max(0, Math.round(Math.hypot(boss.x - you.x, (boss.z ?? 0) - you.z)))
+    return dist > 8 ? `Boss unlocked — follow the marker inland (${dist})` : 'Fight the Strand Colossus'
+  }
+  if (w.bossUnlocked && !boss?.alive) return w.gateOpen ? 'The inland is open. Keep growing.' : 'The Strand Colossus has fallen'
+  if (you.x < 66) return 'Go ashore and follow the marker inland to the first boss'
   return fallback
 }
 
