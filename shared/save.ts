@@ -122,3 +122,11 @@ export function parseGameSave(raw: string): GameSave | null {
 export function serializeGameSave(data: GameSave): string {
   return JSON.stringify(data)
 }
+
+export function titleCta(save: { name?: string; ep?: number } | null): { label: string; sub: string; showNew: boolean } {
+  if (!save) return { label: 'Begin in the shallows', sub: 'Enter the living world', showNew: false }
+  const name = (save.name || '').trim() || 'Your creature'
+  const ep = typeof save.ep === 'number' && Number.isFinite(save.ep) ? Math.max(0, Math.round(save.ep)) : 0
+  return { label: 'Continue', sub: `${name} · ${ep} EP`, showNew: true }
+}
+

@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { COLOR_NAMES, COLORS, ROCK_TINT, TREE_TINT, TIER_SPENT, treeById } from '../shared/catalog'
 import { applyCraft, applyMorphBuy, BOSS_X, BOSS_Z, createWorld, nearestInCone, playerOf, step, type Ent, type Frame, type World } from '../shared/sim'
 import { readPad, type PadLayer } from '../shared/pad'
-import { SAVE_KEY, applyGameSave, encodeGameSave, parseGameSave, serializeGameSave } from '../shared/save'
+import { SAVE_KEY, applyGameSave, encodeGameSave, parseGameSave, serializeGameSave, titleCta } from '../shared/save'
 import { PIECES, canPlace, costLine, nearestPiece, pieceById, placePiece, refundPiece } from '../shared/build'
 import { EXTRA_REAR, agility, ashoreNeed, canGoAshore, equippedLabel, morphFx, morphOf, partsIn, switchBranch, type Category } from '../shared/evolve'
 import { RECIPES, canCraft } from '../shared/craft'
@@ -12,7 +12,7 @@ import { attackVolumes, type HitVol } from '../shared/body'
 import { PREY_TINT, buildCreature, creatureKey, poseCreature, preyInstanceGeo } from './mesh'
 import { ChunkWorld } from './chunks'
 import { buildWater, loadPbr, setTerrainQuality } from './world3d'
-import { BEACH_END, WATER, groundAt, shoreX, SEA_END } from '../shared/terrain'
+import { BEACH_END, WATER, groundAt, shoreX, SEA_END, clearCarves } from '../shared/terrain'
 
 const SAVE = SAVE_KEY
 
@@ -398,14 +398,10 @@ export class Game {
     const muteBtn = document.getElementById('set-mute')
     if (muteBtn) muteBtn.textContent = audio.muted ? 'Unmute' : 'Mute'
     const solo = document.getElementById('solo')
-    const name = document.getElementById('name') as HTMLInputElement | null
-    solo?.addEventListener('click', () => {
-      audio.unlock()
-      void this.enterWide()
-      this.name = name?.value.trim() || 'Tidewisp'
-      playerOf(this.world).name = this.name
-      this.start()
-    })
+    solo?.addEventListener('click', () => this.beginFromTitle())
+    document.getElementById('new-game')?.addEventListener('click', () => this.askNewGame())
+    document.getElementById('new-yes')?.addEventListener('click', () => this.confirmNewGame())
+    document.getElementById('new-no')?.addEventListener('click', () => this.cancelNewGame())
     document.getElementById('evo-close')?.addEventListener('click', () => this.toggleEvo(false))
     document.getElementById('evo-dig')?.addEventListener('click', () => this.digFromEvo())
     document.getElementById('evo-fish')?.addEventListener('click', () => this.pickBranch('fish'))
@@ -486,6 +482,7 @@ export class Game {
       this.save()
     })
     this.paintColors()
+    this.syncTitle()
     this.touch()
     this.guardSurface()
     this.applyQuality()
@@ -839,6 +836,11 @@ export class Game {
       this.toggleSelect(false)
       return true
     }
+    const ask = document.getElementById('new-ask')
+    if (ask && !ask.hidden) {
+      this.cancelNewGame()
+      return true
+    }
     return false
   }
 
@@ -904,6 +906,8 @@ export class Game {
     document.getElementById('save-toast')?.setAttribute('hidden', '')
     this.toastT = 0
     document.getElementById('title')?.removeAttribute('hidden')
+    this.cancelNewGame()
+    this.syncTitle()
     this.applyTouchVisibility()
     this.syncPause()
   }
@@ -932,6 +936,15 @@ export class Game {
   }
 
   restart(): void {
+    this.resetWorld()
+    document.getElementById('title')?.removeAttribute('hidden')
+    this.cancelNewGame()
+    this.syncTitle()
+    this.applyTouchVisibility()
+    this.syncPause()
+  }
+
+  private resetWorld(): void {
     for (const group of this.meshes.values()) group.removeFromParent()
     this.meshes.clear()
     this.keysigs.clear()
@@ -948,21 +961,94 @@ export class Game {
     this.shoreTold = false
     this.evoOpen = false
     this.buildOpen = false
+    this.buildMode = false
     this.yaw = 0.4
     this.pitch = -0.12
     this.yawT = 0.4
     this.pitchT = -0.12
     for (const id of ['settings', 'select', 'quit-ask', 'save-toast', 'evo', 'build', 'hud', 'overlay']) document.getElementById(id)?.setAttribute('hidden', '')
-    document.getElementById('title')?.removeAttribute('hidden')
+    this.lastSaved = null
+    clearCarves()
     try {
       localStorage.removeItem(SAVE)
+      localStorage.removeItem('evo2.hinted')
     } catch {
       /* ignore */
     }
   }
 
+  private applyNameAndColor(color: number): void {
+    const name = document.getElementById('name') as HTMLInputElement | null
+    this.name = name?.value.trim() || 'Tidewisp'
+    const you = playerOf(this.world)
+    you.name = this.name
+    you.load.color = color
+  }
+
+  private beginFromTitle(): void {
+    audio.unlock()
+    void this.enterWide()
+    this.applyNameAndColor(playerOf(this.world).load.color)
+    this.start()
+  }
+
+  private askNewGame(): void {
+    const ask = document.getElementById('new-ask')
+    const actions = document.getElementById('title-actions')
+    if (ask) ask.hidden = false
+    if (actions) actions.hidden = true
+    this.focusIndex = 0
+    this.markFocus()
+  }
+
+  private cancelNewGame(): void {
+    const ask = document.getElementById('new-ask')
+    const actions = document.getElementById('title-actions')
+    if (ask) ask.hidden = true
+    if (actions) actions.hidden = false
+    const items = this.menuTargets()
+    const neu = items.findIndex((el) => el.id === 'new-game')
+    this.focusIndex = neu >= 0 ? neu : 0
+    this.markFocus()
+  }
+
+  private confirmNewGame(): void {
+    const color = playerOf(this.world).load.color
+    audio.unlock()
+    void this.enterWide()
+    this.resetWorld()
+    this.applyNameAndColor(color)
+    this.syncTitle()
+    this.start()
+  }
+
+  private syncTitle(): void {
+    const cta = titleCta(this.titleSave())
+    const label = document.querySelector('#solo .solo-label')
+    const sub = document.querySelector('#solo .solo-sub')
+    const neu = document.getElementById('new-game') as HTMLButtonElement | null
+    if (label) label.textContent = cta.label
+    if (sub) sub.textContent = cta.sub
+    if (neu) neu.hidden = !cta.showNew
+    const name = document.getElementById('name') as HTMLInputElement | null
+    const saved = this.titleSave()
+    if (name && saved?.name && !name.value) name.value = saved.name
+  }
+
+  private titleSave(): { name?: string; ep?: number } | null {
+    try {
+      const raw = this.lastSaved ?? (typeof localStorage !== 'undefined' ? localStorage.getItem(SAVE) : null)
+      if (!raw) return null
+      return parseGameSave(raw)
+    } catch {
+      return null
+    }
+  }
+
   start(): void {
     this.playing = true
+    document.getElementById('new-ask')?.setAttribute('hidden', '')
+    document.getElementById('title-actions')?.removeAttribute('hidden')
     document.getElementById('title')?.setAttribute('hidden', '')
     document.getElementById('hud')?.removeAttribute('hidden')
     this.resize()
@@ -1577,7 +1663,11 @@ export class Game {
     }
     if (this.selectOpen) return pick(['select-pause', 'select-evolve', 'select-quit'])
     if (this.mapOpen) return pick(['map-close'])
-    if (!this.playing) return pick(['solo'])
+    if (!this.playing) {
+      const ask = document.getElementById('new-ask')
+      if (ask && !ask.hidden) return pick(['new-yes', 'new-no'])
+      return pick(['solo', 'new-game'])
+    }
     const over = document.getElementById('overlay')
     if (over && !over.hidden) return pick(['resume'])
     return []

@@ -23,10 +23,18 @@
       <div id="colors" class="swatches"></div>
       <p class="goal">Eat, grow, and evolve from the ancient sea to the first shore</p>
       <p class="path">Guppy → Steelhead (12 EP) → Sturgeon (18 EP). Defeat creatures to earn EP.</p>
-      <button id="solo" type="button">
-        <span class="solo-label">Begin in the shallows</span>
-        <span class="solo-sub">Enter the living world</span>
-      </button>
+      <div id="title-actions">
+        <button id="solo" type="button">
+          <span class="solo-label">Begin in the shallows</span>
+          <span class="solo-sub">Enter the living world</span>
+        </button>
+        <button id="new-game" type="button" hidden>New game</button>
+      </div>
+      <div id="new-ask" hidden>
+        <p class="quit-copy">Start over as a new guppy? This erases your current save.</p>
+        <button id="new-yes" type="button">Start new game</button>
+        <button id="new-no" type="button">Cancel</button>
+      </div>
       <p id="title-msg"></p>
       <div class="help" id="title-help">
         <p><strong>Keyboard:</strong> WASD move · mouse drag or right-drag orbits, scroll zooms · click bites · Shift sprint · Space jump · C dive · F dig · B build · Tab lock · E evolve · Q dash · Esc menu. In build, Q/E rotate and Esc or B leave (E does not evolve, Q does not dash)</p>

@@ -146,6 +146,16 @@ export function importCarves(entries: unknown): void {
   }
 }
 
+export function clearCarves(): void {
+  for (const k of carved.keys()) {
+    const [sx, , sz] = k.split('|')
+    const x = Number(sx)
+    const z = Number(sz)
+    if (Number.isFinite(x) && Number.isFinite(z)) dirtyChunks.add(chunkId(x, z))
+  }
+  carved.clear()
+}
+
 export function carveCount(): number {
   return carved.size
 }

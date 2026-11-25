@@ -8,7 +8,7 @@ import { landOk, attackPower, bossReady, bossMeterLine, BOSS_ATTACK } from '../s
 import { columnSeconds } from '../shared/dig'
 import { attackVolumes, bodyScale, volumeHits, youngBite } from '../shared/body'
 import { applyMorphBuy, applyWorldSnapshot, createWorld, playerOf, snapshotWorld, step } from '../shared/sim'
-import { applyGameSave, encodeGameSave, parseGameSave, serializeGameSave } from '../shared/save'
+import { applyGameSave, encodeGameSave, parseGameSave, serializeGameSave, titleCta } from '../shared/save'
 import { BTN, deadzone, readPad, type PadLike } from '../shared/pad'
 import { canPlace, placePiece, refundPiece } from '../shared/build'
 import { bodyBreakPower, cellSeconds, chopSeconds, compute, tierOf } from '../shared/rules'
@@ -193,6 +193,16 @@ restored.eats = 0
 applyGameSave(restored, parseGameSave(raw)!)
 if (Math.abs(playerOf(restored).x - 42.5) > 0.001 || playerOf(restored).ep !== 18 || restored.eats !== 4) throw new Error('second load should overwrite later changes')
 console.log('save/load round-trip')
+
+const freshCta = titleCta(null)
+if (freshCta.label !== 'Begin in the shallows' || freshCta.showNew || freshCta.sub !== 'Enter the living world') {
+  throw new Error('title with no save should only offer Begin in the shallows')
+}
+const midCta = titleCta({ name: 'Tidewalker', ep: 18 })
+if (midCta.label !== 'Continue' || !midCta.showNew || midCta.sub !== 'Tidewalker · 18 EP') {
+  throw new Error(`title with a save should offer Continue and New game, got ${midCta.label} / ${midCta.sub}`)
+}
+console.log('title continue and new-game labels')
 
 const fresh = createWorld()
 const pup = playerOf(fresh)
