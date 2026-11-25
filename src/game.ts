@@ -2398,7 +2398,8 @@ export class Game {
         grow.textContent = you.ep < goal.cost ? `Need ${goal.cost} EP for a ${goal.next}` : `Grow a ${goal.next} · ${goal.cost} EP`
       }
     }
-    if (!this.shoreTold && you.x >= 60 && !canGoAshore(you.load)) {
+    const fightingBoss = this.world.ents.some((e) => e.kind === 'boss' && e.alive && Math.hypot(e.x - you.x, (e.z ?? 0) - you.z) < 24)
+    if (!this.shoreTold && you.x >= 64.5 && !canGoAshore(you.load) && !fightingBoss) {
       this.shoreTold = true
       this.world.banner = ashoreNeed()
       this.world.bannerT = 6
