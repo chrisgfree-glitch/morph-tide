@@ -377,6 +377,98 @@ function stageFish(g: THREE.Group, tier: number, body: number, belly: number, ac
   }
 }
 
+/** Chibi piranha: round and cute at tier 1, spikier and meaner each tier and with sharper teeth / bigger jaws. */
+function stagePiranha(g: THREE.Group, tier: number, load: Loadout, body: number): void {
+  const menace = Math.min(1, (tier - 1) / 2 + (load.teeth && load.teeth !== 'peg' ? 0.2 : 0) + (load.jaw && load.jaw !== 'nip' ? 0.15 : 0))
+  const len = 1.0 + tier * 0.12
+  const blue = new THREE.Color(0x2f6fd0).lerp(new THREE.Color(body), 0.15).getHex()
+  const stripeCol = 0x7fb8ee
+  const face = 0xece6ee
+  const orange = new THREE.Color(0xf2a020).lerp(new THREE.Color(0xff6a10), menace * 0.5).getHex()
+  const ball = (rx: number, ry: number, rz: number) => new THREE.SphereGeometry(1, 18, 14).scale(rx, ry, rz)
+  // round body, chunkier with menace
+  const torso = part(g, ball(len * 0.5, 0.42 + menace * 0.06, 0.36), 0, 0, 0, 1, 1, 1, blue, 'body', 0.35, 0.12, 'scale', true)
+  torso.userData.swim = attachSwim(torso.material as THREE.MeshStandardMaterial)
+  // big white face plate
+  part(g, ball(0.32, 0.38 + menace * 0.04, 0.37), len * 0.27, 0.01, 0, 1, 1, 1, face, '', 0.5, 0.02, 'scale', false)
+  // light stripes from tier 2
+  if (tier >= 2) for (let i = 0; i < 3; i++) {
+    for (const sd of [-1, 1]) {
+      const st = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.02), new THREE.MeshStandardMaterial({ color: stripeCol, roughness: 0.45 }))
+      st.position.set(-0.02 - i * 0.16, 0.02, sd * 0.33)
+      st.rotation.z = -0.15
+      g.add(st)
+    }
+  }
+  // huge eyes: dark & friendly at tier 1, red and angry later
+  const eyeS = 0.15 - menace * 0.03
+  const iris = new THREE.Color(0x2a1a22).lerp(new THREE.Color(0xc0162a), Math.min(1, menace * 1.4)).getHex()
+  for (const sd of [-1, 1]) {
+    part(g, GEO.eye, len * 0.36, 0.14, sd * 0.24, eyeS, eyeS, eyeS * 0.8, 0xfaf6f2, '', 0.15, 0, 'hide', false)
+    part(g, GEO.eye, len * 0.39, 0.14, sd * 0.29, eyeS * 0.62, eyeS * 0.62, eyeS * 0.45, iris, '', 0.2, 0.05, 'hide', false)
+    part(g, GEO.eye, len * 0.4, 0.17, sd * 0.32, eyeS * 0.18, eyeS * 0.18, eyeS * 0.12, 0xffffff, '', 0.05, 0, 'hide', false)
+    if (menace > 0.4) {
+      // angry brow ridge
+      const brow = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.04, 0.06), new THREE.MeshStandardMaterial({ color: blue, roughness: 0.4 }))
+      brow.position.set(len * 0.37, 0.27, sd * 0.25)
+      brow.rotation.z = -0.35 * menace
+      brow.rotation.x = sd * 0.25
+      g.add(brow)
+    }
+  }
+  // mouth: a smile at tier 1, gaping toothy maw later
+  const gape = 0.06 + menace * 0.12
+  const mouth = part(g, ball(0.1, gape, 0.17), len * 0.47, -0.13, 0, 1, 1, 1, 0x7a1c2a, 'jaw', 0.6, 0, 'hide', false)
+  mouth.userData.baseY = mouth.position.y
+  const fangs = tier === 1 ? 0 : 4 + Math.round(menace * 6)
+  const fangH = 0.04 + menace * 0.07
+  for (let i = 0; i < fangs; i++) {
+    const t = fangs === 1 ? 0.5 : i / (fangs - 1)
+    const z = (t - 0.5) * 0.28
+    const top = i % 2 === 0
+    const f = new THREE.Mesh(new THREE.ConeGeometry(0.018 + menace * 0.01, fangH, 6), new THREE.MeshStandardMaterial({ color: 0xf6f0e4, roughness: 0.3 }))
+    f.position.set(len * 0.52, top ? -0.13 + gape * 0.7 : -0.13 - gape * 0.7, z)
+    f.rotation.z = top ? Math.PI : 0
+    g.add(f)
+  }
+  // red gill slashes from tier 2
+  if (tier >= 2) for (let i = 0; i < 2 + Math.round(menace); i++) for (const sd of [-1, 1]) {
+    const gl = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.26, 0.02), new THREE.MeshStandardMaterial({ color: 0xc02838, roughness: 0.5 }))
+    gl.position.set(len * 0.1 - i * 0.06, -0.02, sd * 0.35)
+    gl.rotation.z = 0.25
+    g.add(gl)
+  }
+  const fin = (x: number, y: number, z: number, sx: number, sy: number, name: string, rz: number) => {
+    const m = part(g, GEO.fin, x, y, z, sx, sy, 1, orange, name, 0.5, 0.02, 'scale', false)
+    m.rotation.z = rz
+    m.userData.baseZ = rz
+    ;(m.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide
+    return m
+  }
+  // dorsal: a soft nub at tier 1, a row of spikes later
+  const spikes = tier === 1 ? 1 : 3 + Math.round(menace * 4)
+  for (let i = 0; i < spikes; i++) {
+    const sp = new THREE.Mesh(new THREE.ConeGeometry(0.06, tier === 1 ? 0.14 : 0.18 + menace * 0.16, 5), new THREE.MeshStandardMaterial({ color: orange, roughness: 0.45 }))
+    sp.position.set(len * 0.12 - i * 0.1, 0.4 + menace * 0.05 - i * 0.012, 0)
+    sp.rotation.z = 0.5
+    sp.name = i === 0 ? 'dorsal' : ''
+    g.add(sp)
+  }
+  const pecL = fin(len * 0.05, -0.12, -0.34, 0.42 + menace * 0.2, 0.3, 'finL', 0.6)
+  const pecR = fin(len * 0.05, -0.12, 0.34, 0.42 + menace * 0.2, 0.3, 'finR', -0.6)
+  pecL.rotation.y = -0.3
+  pecR.rotation.y = 0.3
+  fin(-len * 0.05, -0.36, 0, 0.3 + menace * 0.2, 0.24, 'anal', Math.PI)
+  const tail = new THREE.Group()
+  tail.name = 'tail'
+  tail.position.set(-len * 0.48, 0, 0)
+  g.add(tail)
+  const caudal = part(tail, GEO.caudal, 0, 0, 0, 0.8 + menace * 0.4, 0.8 + menace * 0.5, 1, orange, 'caudal', 0.45, 0.02, 'scale', false)
+  caudal.rotation.z = Math.PI
+  ;(caudal.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide
+}
+
+
 function hash(text: string): number {
   let h = 0
   for (let i = 0; i < text.length; i++) h = (h * 33 + text.charCodeAt(i)) | 0
@@ -429,7 +521,8 @@ export function buildCreature(load: Loadout, spent: number, role: 'player' | 'np
   const box = bodyBox(load, spent, role === 'boss', species)
   g.scale.set(box.scale * box.long, box.scale * box.tall, box.scale)
   if (!land && role !== 'boss' && tier <= 3) {
-    stageFish(g, tier, body, belly, accent)
+    if (role === 'player') stagePiranha(g, tier, load, body)
+    else stageFish(g, tier, body, belly, accent)
     const hp = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.06), new THREE.MeshBasicMaterial({ color: 0x8f4d48 }))
     hp.position.set(0.1, 0.55, 0)
     hp.name = 'hp'
