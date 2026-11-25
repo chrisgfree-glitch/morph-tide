@@ -32,9 +32,9 @@
       </button>
       <p id="title-msg"></p>
       <div class="help" id="title-help">
-        <p><strong>Keyboard:</strong> WASD move · mouse drag or right-drag orbits, scroll zooms · click bites · Shift sprint · Space jump · C dive · F dig · B build · Tab lock · E evolve · Esc menu</p>
-        <p><strong>Touch:</strong> Left stick moves · two-finger or right-side drag orbits · Attack bites · Build opens place mode</p>
-        <p><strong>Controller:</strong> LS move · RS orbit · RT bite · LT horn · A jump · B dash · X dig · Y build · L3 sprint · R3 lock · Start menu</p>
+        <p><strong>Keyboard:</strong> WASD move · mouse drag or right-drag orbits, scroll zooms · click bites · Shift sprint · Space jump · C dive · F dig · B build · Tab lock · E evolve · Q dash · Esc menu. In build, Q/E rotate and Esc or B leave (E does not evolve, Q does not dash)</p>
+        <p><strong>Touch:</strong> Left stick moves · two-finger or right-side drag orbits · Attack bites · Evolve opens parts · Build opens place mode</p>
+        <p><strong>Controller:</strong> LS move · RS orbit · RT bite · LT horn · A jump · B dash (leaves build) · X dig · Y build · D-pad Left evolve · D-pad U/D rotate in build · L3 sprint · R3 lock · Start menu</p>
       </div>
     </div>
     <div id="rotate">
@@ -53,7 +53,7 @@
         <button id="t-settings" type="button" aria-label="Menu">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm8.2 3.1-1.7-.3a6.6 6.6 0 0 0-.5-1.2l1-1.4a.8.8 0 0 0-.1-.9l-1.2-1.2a.8.8 0 0 0-.9-.1l-1.4 1a6.6 6.6 0 0 0-1.2-.5L13.9 4.3a.8.8 0 0 0-.7-.6h-1.6a.8.8 0 0 0-.7.6l-.3 1.7a6.6 6.6 0 0 0-1.2.5l-1.4-1a.8.8 0 0 0-.9.1L5.9 6.8a.8.8 0 0 0-.1.9l1 1.4a6.6 6.6 0 0 0-.5 1.2l-1.7.3a.8.8 0 0 0-.6.7v1.6c0 .4.3.7.6.7l1.7.3c.1.4.3.8.5 1.2l-1 1.4a.8.8 0 0 0 .1.9l1.2 1.2c.3.3.7.3.9.1l1.4-1c.4.2.8.4 1.2.5l.3 1.7c.1.4.4.6.7.6h1.6c.4 0 .7-.3.7-.6l.3-1.7c.4-.1.8-.3 1.2-.5l1.4 1c.3.2.7.2.9-.1l1.2-1.2c.3-.3.3-.7.1-.9l-1-1.4c.2-.4.4-.8.5-1.2l1.7-.3c.4-.1.6-.4.6-.7v-1.6a.8.8 0 0 0-.6-.7z"/></svg>
         </button>
-        <button id="t-evo" type="button">Evolve</button>
+        <button id="t-evo" type="button" aria-label="Evolve">Evolve</button>
       </div>
       <p id="goal"></p>
       <button id="grow" type="button">Grow</button>
@@ -77,12 +77,12 @@
     </div>
         <p id="pad-prompt" hidden>Controller connected</p>
     <div id="pad-map" hidden>
-      <span>LS move</span><span>RS orbit</span><span>RT bite</span><span>LT horn</span><span>A jump</span><span>B dash</span><span>X dig</span><span>Y build</span><span>L3 sprint</span><span>R3 lock</span><span>Start menu</span>
+      <span>LS move</span><span>RS orbit</span><span>RT bite</span><span>LT horn</span><span>A jump</span><span>B dash</span><span>X dig</span><span>Y build</span><span>D-pad Left evolve</span><span>D-pad U/D rotate in build</span><span>L3 sprint</span><span>R3 lock</span><span>Start menu</span><span>Back map</span>
     </div>
     <div id="build-tray" hidden>
       <p id="build-status"></p>
       <div id="build-picks"></div>
-      <p class="build-hint">Q/E rotate · click, A or RT place · X or F pick up (refund) · B or Esc leave</p>
+      <p class="build-hint">Q/E or D-pad U/D rotate · click, A or RT place · X or F pick up (refund) · B or Esc leave</p>
     </div>
 
     <div id="select" class="panel menu-card" hidden>
@@ -108,9 +108,9 @@
       </div>
       <p class="path">Guppy → Steelhead (12 EP) → Sturgeon (18 EP). Defeat creatures to earn EP.</p>
       <div class="help guide">
-        <p><strong>Keyboard:</strong> WASD move · mouse drag or right-drag orbits, scroll zooms · click bites · Shift sprint · Space jump · C dive · F dig · B build · Tab lock · E evolve · Esc menu. Mute is in this menu.</p>
-        <p><strong>Touch:</strong> Left stick moves · two-finger or right-side drag orbits · Attack bites · Build opens place mode</p>
-        <p><strong>Controller:</strong> LS move · RS orbit · RT bite · LT horn · A jump · B dash · X dig · Y build · LB/RB or D-pad cycle pieces · L3 sprint · R3 lock · Start menu · Back map</p>
+        <p><strong>Keyboard:</strong> WASD move · mouse drag or right-drag orbits, scroll zooms · click bites · Shift sprint · Space jump · C dive · F dig · B build · Tab lock · E evolve · Q dash · Esc closes build or menus first, then Select. In build, Q/E rotate. Mute is in this menu.</p>
+        <p><strong>Touch:</strong> Left stick moves · two-finger or right-side drag orbits · Attack bites · Evolve opens parts · Build opens place mode</p>
+        <p><strong>Controller:</strong> LS move · RS orbit · RT bite · LT horn · A jump · B dash (leaves build) · X dig · Y build · D-pad Left evolve · D-pad U/D rotate in build · LB/RB or D-pad L/R cycle pieces in build · L3 sprint · R3 lock · Start menu · Back map</p>
       </div>
       <label>Look sensitivity <input id="set-sens" type="range" min="0.2" max="2" step="0.1" value="0.5" /></label>
       <label class="check"><input id="set-invert" type="checkbox" /> Invert Y</label>

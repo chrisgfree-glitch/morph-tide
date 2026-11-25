@@ -158,7 +158,9 @@ export class Game {
     this.resize()
     window.addEventListener('resize', () => this.resize())
     window.addEventListener('keydown', (e) => {
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) e.preventDefault()
+      const typing = isTypingTarget(e.target)
+      if (!typing && shouldGuardKey(e, this.playing)) e.preventDefault()
+      if (typing && e.key !== 'Escape') return
       const inMenu = this.menuTargets().length > 0
       if (inMenu && (e.key === 'ArrowUp' || e.key === 'ArrowLeft')) {
         this.moveFocus(-1)
@@ -173,25 +175,29 @@ export class Game {
         return
       }
       this.keys.add(e.key.toLowerCase())
-      if ((e.key === 'e' || e.key === 'E') && !this.buildMode && !inMenu) this.toggleEvo()
-      if ((e.key === 'b' || e.key === 'B') && !inMenu) this.toggleBuild()
       if (e.key === 'Escape') {
         if (!this.closeTopMenu() && this.playing) this.toggleSelect(true)
+        return
       }
-      if ((e.key === 'm' || e.key === 'M') && !(e.target instanceof HTMLInputElement) && !inMenu) this.toggleMap()
+      if (inMenu) return
+      if (this.buildMode) {
+        if (e.key === 'q' || e.key === 'Q' || e.key === 'e' || e.key === 'E' || e.key === 'r' || e.key === 'R') {
+          this.buildYaw += e.key.toLowerCase() === 'q' ? Math.PI / 2 : -Math.PI / 2
+        }
+        if (e.key === '[' || e.key === ']') this.cyclePiece(e.key === ']' ? 1 : -1)
+        if (e.key === 'b' || e.key === 'B') this.toggleBuild(false)
+        return
+      }
+      if ((e.key === 'e' || e.key === 'E')) this.toggleEvo()
+      if ((e.key === 'b' || e.key === 'B')) this.toggleBuild(true)
+      if ((e.key === 'm' || e.key === 'M')) this.toggleMap()
       if (e.key === 'h' || e.key === 'H') this.debug = !this.debug
       if (e.key === 'v' || e.key === 'V') this.firstPerson = !this.firstPerson
-      if (e.key === 'Tab') {
-        e.preventDefault()
-        this.toggleLock()
-      }
-      if (this.buildMode && (e.key === 'q' || e.key === 'Q' || e.key === 'e' || e.key === 'E' || e.key === 'r' || e.key === 'R')) {
-        this.buildYaw += e.key.toLowerCase() === 'q' ? Math.PI / 2 : -Math.PI / 2
-      } else if ((e.key === 'q' || e.key === 'Q') && this.cd.dash <= 0) {
+      if (e.key === 'Tab') this.toggleLock()
+      if ((e.key === 'q' || e.key === 'Q') && this.cd.dash <= 0) {
         this.cd.dash = 1.15
         this.dashT = 0.2
       }
-      if (this.buildMode && (e.key === '[' || e.key === ']')) this.cyclePiece(e.key === ']' ? 1 : -1)
     })
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()))
     this.bindUi()
@@ -506,11 +512,10 @@ export class Game {
 
   private guardSurface(): void {
     window.addEventListener('contextmenu', (e) => {
-      const t = e.target as HTMLElement | null
-      if (t?.closest('input, textarea, #title, .panel, #overlay')) return
-      e.preventDefault()
+      if (isTypingTarget(e.target)) return
+      if (this.playing) e.preventDefault()
     })
-    const nodes = document.querySelectorAll('canvas, #stick, #t-bite, #t-up, #t-dive, #t-dash, #t-horn, #t-act, #t-build')
+    const nodes = document.querySelectorAll('canvas, #stick, #t-bite, #t-up, #t-dive, #t-dash, #t-horn, #t-act, #t-build, #t-evo')
     nodes.forEach((el) => {
       el.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false })
       el.addEventListener('pointerdown', (e) => {
@@ -594,7 +599,7 @@ export class Game {
       this.cd.build = 0.4
       this.toggleBuild()
     })
-    document.getElementById('t-evo')?.addEventListener('pointerup', (e) => {
+    document.getElementById('t-evo')?.addEventListener('pointerdown', (e) => {
       e.preventDefault()
       this.toggleEvo()
     })
@@ -978,7 +983,7 @@ export class Game {
       const idx = PIECES.findIndex((p) => p.id === near.kind)
       if (idx >= 0) this.buildIndex = idx
       this.buildYaw = near.yaw - you.yaw
-      this.buildFree = true
+      this.buildFree = false
       const def = pieceById(near.kind)
       if (def?.base) {
         const i = this.world.bases.findIndex((b) => b.owner === you.id && Math.abs(b.x - near.x) < 1.4 && b.name === def.name)
@@ -1458,15 +1463,18 @@ export class Game {
     if (this.buildMode) {
       if (edge(4) || edge(14)) this.cyclePiece(-1)
       if (edge(5) || edge(15)) this.cyclePiece(1)
-      if (edge(12) || edge(13)) this.buildYaw += edge(12) ? Math.PI / 2 : -Math.PI / 2
+      const rotUp = edge(12)
+      const rotDown = edge(13)
+      if (rotUp) this.buildYaw += Math.PI / 2
+      else if (rotDown) this.buildYaw -= Math.PI / 2
       if (edge(0) || edge(7)) this.confirmPlace()
       if (edge(2)) this.pickupPiece()
-      if (edge(1)) this.toggleBuild(false)
-      if (edge(3)) this.toggleBuild(false)
+      if (edge(1) || edge(3)) this.toggleBuild(false)
       this.gp = { lx, ly, rx, ry, attack: false, horn: false, dash: false, dig: false, rise: false, dive: false, sprint: pressed(10), use: false }
       return
     }
     if (edge(3)) this.toggleBuild(true)
+    if (edge(14)) this.toggleEvo()
     if (edge(11)) this.toggleLock()
     if (edge(1) && this.cd.dash <= 0) {
       this.cd.dash = 1.05
@@ -2119,5 +2127,26 @@ function skyTexture(): THREE.CanvasTexture {
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
   return tex
+}
+
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true
+  return target.isContentEditable
+}
+
+const GAME_KEYS = new Set([
+  ' ', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'w', 'a', 's', 'd', 'W', 'A', 'S', 'D',
+  'q', 'e', 'r', 'f', 'b', 'c', 'm', 'h', 'v', 'j', 'g',
+  'Q', 'E', 'R', 'F', 'B', 'C', 'M', 'H', 'V', 'J', 'G',
+  'Shift', 'Control', '[', ']', 'Escape',
+])
+
+function shouldGuardKey(e: KeyboardEvent, playing: boolean): boolean {
+  if (e.metaKey || (e.ctrlKey && e.key !== 'Control')) return false
+  if (e.key === 'Tab' || e.key === ' ' || e.key.startsWith('Arrow')) return true
+  return playing && GAME_KEYS.has(e.key)
 }
 
