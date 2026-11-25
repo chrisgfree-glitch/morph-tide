@@ -356,9 +356,18 @@ input { background: #1a2a30; color: #e7e0d4; border: 2px solid #d7cbb8; padding:
 .evo-top-main h2 { margin: 0; font-size: 16px; }
 #evo-ep, #evo-branch { font-size: 13px; opacity: 0.9; white-space: nowrap; }
 .evo-top-actions { display: flex; gap: 6px; flex-wrap: nowrap; }
-.evo-top-actions button { margin: 0; padding: 6px 10px; min-height: 36px; font-size: 13px; }
-#evo-cats { display: flex; flex-wrap: wrap; gap: 6px; order: 1; flex: 0 0 auto; }
-#evo-cats button { margin: 0; padding: 6px 10px; min-height: 36px; font-size: 13px; }
+.evo-top-actions button { margin: 0; padding: 6px 10px; min-height: 36px; font-size: 13px; width: auto; display: inline-flex; align-items: center; flex: 0 0 auto; }
+#evo-cats { display: flex; flex-wrap: wrap; gap: 6px; order: 1; flex: 0 0 auto; max-height: none; }
+#evo-cats button {
+  margin: 0;
+  padding: 6px 10px;
+  min-height: 36px;
+  font-size: 13px;
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
 #evo-cats button.on, .evo-top-actions button.on { outline: 2px solid #e7e0d4; }
 #evo-body {
   display: grid;
