@@ -12,6 +12,7 @@ import {
 } from '../shared/catalog'
 import { bodyBox } from '../shared/body'
 import { tierOf } from '../shared/rules'
+import { partById } from '../shared/evolve'
 
 const GEO = {
   trunk: profile(1.85, 0.18, 'fish'),
@@ -434,6 +435,7 @@ export function buildCreature(load: Loadout, spent: number, role: 'player' | 'np
     hp.name = 'hp'
     g.add(hp)
     g.userData.hp = hp
+    dressMorph(g, load, accent, body)
     return g
   }
 
@@ -624,18 +626,225 @@ export function buildCreature(load: Loadout, spent: number, role: 'player' | 'np
   hp.name = 'hp'
   g.add(hp)
   g.userData.hp = hp
+  dressMorph(g, load, accent, body)
   return g
 }
 
+
+function dressMorph(g: THREE.Group, load: Loadout, accent: number, body: number): void {
+  const morph = load.morph
+  if (!morph || !morph.v) return
+  const skinTint: Record<string, number> = {
+    scales: 0x7aa36a,
+    slime: 0x4a8f7a,
+    spiny: 0x8a7a4a,
+    plates: 0xc4b49a,
+    bio: 0x3aa090,
+    leather: 0x6a6a72,
+    blubber: 0xd8c8a8,
+    whale: 0x6a7380,
+    orca: 0x1c1c1c,
+    magma: 0xb24a28,
+  }
+  if (morph.skin && skinTint[morph.skin]) {
+    const tint = skinTint[morph.skin]!
+    g.traverse((obj) => {
+      if (obj.name !== 'body' && obj.name !== '') return
+      const mesh = obj as THREE.Mesh
+      const mat = mesh.material as THREE.MeshStandardMaterial | undefined
+      if (!mat || !mat.color) return
+      if (obj.name === 'body') mat.color.lerp(new THREE.Color(tint), 0.55)
+    })
+  }
+  if (morph.skin === 'bio') {
+    g.traverse((obj) => {
+      const mat = (obj as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined
+      if (!mat || !mat.emissive) return
+      mat.emissive.setHex(0x3cffd0)
+      mat.emissiveIntensity = 0.55
+    })
+  }
+  if (morph.skin === 'magma') {
+    g.traverse((obj) => {
+      const mat = (obj as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined
+      if (!mat || !mat.emissive) return
+      mat.emissive.setHex(0xff5520)
+      mat.emissiveIntensity = 0.35
+    })
+  }
+  if (morph.skin === 'plates' || morph.skin === 'whale' || morph.skin === 'orca') {
+    for (let i = 0; i < 6; i++) {
+      const pl = part(g, GEO.plate, 0.28 - i * 0.16, 0.1, 0, 0.4, 0.22, 0.32, morph.skin === 'orca' && i % 2 ? 0xf2f0ea : 0xd0c6b4, 'plate', 0.5, 0.12, 'hide', false)
+      pl.userData.morph = true
+    }
+  }
+  if (morph.skin === 'spiny') {
+    for (let i = 0; i < 5; i++) {
+      const s = part(g, GEO.horn, 0.2 - i * 0.14, 0.18, (i % 2 ? 0.06 : -0.06), 0.55, 0.7, 0.55, accent, 'spine', 0.4, 0.1, 'hide', false)
+      s.rotation.z = 0.15
+    }
+  }
+
+  // Head specials
+  if (morph.head === 'angler') {
+    const stalk = part(g, GEO.horn, 0.42, 0.22, 0, 0.7, 1.1, 0.7, accent, 'lure', 0.45, 0.05, 'hide', false)
+    stalk.rotation.z = -0.9
+    const bulb = part(g, GEO.eye, 0.62, 0.42, 0, 0.07, 0.07, 0.07, 0x9cff7a, 'lure-bulb', 0.3, 0, 'hide', false)
+    ;(bulb.material as THREE.MeshStandardMaterial).emissive.setHex(0x7cff4a)
+    ;(bulb.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.9
+  }
+  if (morph.head === 'hammerhead') {
+    const hammer = part(g, GEO.plate, 0.55, 0.08, 0, 0.35, 0.18, 1.15, body, 'hammer', 0.55, 0.05, 'scale', true)
+    hammer.rotation.y = 0
+  }
+  if (morph.head === 'swordfish') {
+    const bill = part(g, GEO.horn, 0.7, 0.02, 0, 1.8, 0.45, 0.45, 0xe7dece, 'bill', 0.4, 0.08, 'hide', false)
+    bill.rotation.z = -1.2
+  }
+  if (morph.head === 'turtle') {
+    part(g, GEO.plate, 0.48, 0.02, 0, 0.4, 0.28, 0.4, 0xb8a078, 'beak', 0.5, 0.04, 'hide', false)
+  }
+
+  // Horns, levels I–III scale length
+  if (morph.horn && morph.hornLv > 0) {
+    const lv = morph.hornLv
+    const count = morph.horn === 'trident' ? 3 : 1
+    for (let i = 0; i < count; i++) {
+      const z = count === 1 ? 0 : (i - 1) * 0.08
+      const h = part(g, GEO.horn, 0.4, 0.22, z, 0.7 + lv * 0.25, 1 + lv * 0.45, 0.7, morph.horn === 'trident' ? 0x2a2428 : accent, 'horn', 0.4, 0.15, 'hide', false)
+      h.rotation.z = -0.45
+      if (morph.horn === 'crest') h.rotation.z = 0.15, h.scale.set(1.3, 0.7, 1.6)
+    }
+  }
+
+  // Side / belly fins: restyle existing pecs or add
+  const side = partById(morph.sideFin)
+  if (side && morph.sideFin && morph.sideFin !== 'fan') {
+    const scale = morph.sideFin === 'manta' ? 1.8 : morph.sideFin === 'flying' ? 1.5 : morph.sideFin === 'dolphin' ? 1.25 : morph.sideFin === 'sharkfin-side' ? 1.2 : 1
+    for (const name of ['finL', 'finR']) {
+      const fin = g.getObjectByName(name)
+      if (fin) fin.scale.multiplyScalar(scale)
+    }
+    if (morph.sideFin === 'lionfish') {
+      for (const s of [-1, 1]) {
+        for (let i = 0; i < 4; i++) {
+          const ray = part(g, GEO.fin, 0.12, 0.02, s * (0.16 + i * 0.02), 0.35, 0.55, 1, 0xe8d45a, 'lion-ray', 0.5, 0.02, 'scale', false)
+          ray.rotation.y = s * (0.7 + i * 0.1)
+          ray.rotation.z = s * 0.3
+        }
+      }
+    }
+  }
+  if (morph.bellyFin === 'lobe') {
+    for (const s of [-1, 1]) {
+      const lobe = part(g, GEO.fin, 0.05, -0.2, s * 0.08, 0.4, 0.3, 1, accent, 'lobe', 0.55, 0.02, 'scale', false)
+      lobe.rotation.z = s * 1.2
+    }
+  }
+
+  // Dorsal (on the back, y positive) — keep named 'dorsal'
+  const dorsal = g.getObjectByName('dorsal')
+  if (dorsal && morph.dorsal) {
+    const sc = morph.dorsal === 'sail' ? 1.6 : morph.dorsal === 'sharkfin' ? 1.35 : morph.dorsal === 'spinyfin' ? 1.1 : morph.dorsal === 'newt' ? 1.2 : 1
+    dorsal.scale.y *= sc
+    dorsal.scale.x *= morph.dorsal === 'sail' ? 1.3 : 1
+  }
+
+  // Rear fins: LOW on the body, toward the tail — never on the back.
+  const placeRear = (_id: string, x: number, y: number, z: number, name: string, scale = 1) => {
+    const m = part(g, GEO.fin, x, y, z, 0.38 * scale, 0.28 * scale, 1, accent, name, 0.55, 0.02, 'scale', false)
+    m.rotation.z = Math.PI * 0.85
+    m.rotation.x = z > 0 ? 0.2 : z < 0 ? -0.2 : 0
+    ;(m.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide
+    return m
+  }
+  if (morph.rear) {
+    const sc = morph.rear === 'dorsalrear' ? 1.25 : morph.rear === 'sailrear' ? 1.2 : morph.rear === 'spinyrear' ? 1.05 : 1
+    placeRear(morph.rear, -0.32, -0.16, 0, 'rear', sc)
+    if (morph.rear === 'spinyrear') {
+      for (const s of [-1, 1]) placeRear('spinyrear', -0.28, -0.14, s * 0.06, 'rear-spine', 0.7)
+    }
+  }
+  for (let i = 0; i < Math.min(2, morph.extraRear || 0); i++) {
+    placeRear('extraRear', -0.4 - i * 0.1, -0.15, (i === 0 ? -0.05 : 0.05), `extra-rear-${i + 1}`, 0.85)
+  }
+
+  // Tails
+  const tail = g.getObjectByName('tail')
+  if (tail && morph.tail && morph.tail !== 'fantail') {
+    if (morph.tail === 'thresher') {
+      const whip = part(tail, GEO.fin, -0.2, 0.2, 0, 0.5, 1.6, 1, accent, 'whip', 0.5, 0.02, 'scale', false)
+      whip.rotation.z = 0.9
+    }
+    if (morph.tail === 'eel') {
+      part(tail, GEO.tail, -0.4, 0, 0, 1.4, 0.5, 0.4, body, 'ribbon', 0.6, 0.04, 'scale', true)
+    }
+    if (morph.tail === 'barbed') {
+      const barb = part(tail, GEO.horn, -0.35, 0, 0, 1.1, 0.8, 0.8, accent, 'barb', 0.45, 0.1, 'hide', false)
+      barb.rotation.z = 1.2
+    }
+  }
+
+  // Octopus body, arms, and limbs
+  if (morph.branch === 'octopus') {
+    const mantle = part(g, GEO.body, 0.05, 0.04, 0, 1.15, 0.9, 1.05, body, 'mantle', 0.35, 0.04, 'hide', true)
+    mantle.scale.set(1.05, 0.85, 1.05)
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2
+      const arm = part(g, GEO.lower, -0.15, -0.16, 0, 0.35, 1.5, 0.35, body, `arm${i}`, 0.55, 0.04, 'hide', false)
+      arm.rotation.z = 1.1
+      arm.rotation.y = a
+      arm.position.set(Math.cos(a) * 0.16, -0.18, Math.sin(a) * 0.16)
+    }
+    if (morph.limb) {
+      for (const s of [-1, 1]) {
+        const leg = part(g, GEO.lower, 0.1, -0.22, s * 0.18, 0.4, 1.2, 0.4, body, 'limb', 0.55, 0.04, 'hide', false)
+        leg.rotation.z = 0.6
+        const belly = part(g, GEO.lower, -0.05, -0.24, s * 0.1, 0.35, 1.0, 0.35, body, 'limb-belly', 0.55, 0.04, 'hide', false)
+        belly.rotation.z = 0.9
+      }
+    }
+  }
+}
+
+export function preyInstanceGeo(species: string): THREE.BufferGeometry {
+  if (species === 'bell') return new THREE.SphereGeometry(0.28, 8, 6)
+  if (species === 'plate') return new THREE.SphereGeometry(0.32, 8, 6)
+  if (species === 'crab' || species === 'beetle' || species === 'magma') return new THREE.SphereGeometry(0.26, 8, 6)
+  const geo = new THREE.SphereGeometry(0.22, 8, 6)
+  geo.scale(1.6, 0.7, 0.7)
+  return geo
+}
+
+export const PREY_TINT: Record<string, number> = {
+  shrimp: 0xc4a090,
+  needle: 0x7f97a0,
+  bell: 0xb89ad0,
+  plate: 0x8a7d62,
+  crab: 0xc46a4a,
+  beetle: 0xc4a04a,
+  newt: 0x6a8a5a,
+  lizard: 0x8a9a4a,
+  hunter: 0x6a5040,
+  brute: 0x7a6a58,
+  magma: 0xc45a2a,
+}
+
 export function creatureKey(load: Loadout, spent: number, species = ''): string {
-  return JSON.stringify({ ...load, tier: tierOf(spent), bucket: Math.floor(spent / 40), species })
+  const m = load.morph
+  const morph = m
+    ? [m.branch, m.skin, m.head, m.horn, m.hornLv, m.sideFin, m.bellyFin, m.dorsal, m.rear, m.extraRear, m.tail, m.limb].join('|')
+    : ''
+  return JSON.stringify({ ...load, morph, tier: tierOf(spent), bucket: Math.floor(spent / 40), species })
 }
 
 export function poseCreature(g: THREE.Group, time: number, moving: boolean, bite: number, facing: number): void {
   const baseY = (g.userData.baseY as number) ?? g.position.y
   g.userData.baseY = baseY
   const land = g.getObjectByName('neck')
-  g.position.y = baseY + (moving ? Math.sin(time * 6) * 0.04 : Math.sin(time * 1.4) * 0.015)
+  const walk = !!g.userData.landWalk
+  g.position.y = baseY + (walk ? (moving ? Math.abs(Math.sin(time * 9)) * 0.06 : 0.02) : moving ? Math.sin(time * 6) * 0.04 : Math.sin(time * 1.4) * 0.015)
+  if (walk) g.rotation.x = moving ? 0.12 : 0.08
   const yaw = (g.userData.yaw as number | undefined) ?? (facing > 0 ? 0 : Math.PI)
   g.rotation.y = -yaw
   const prev = (g.userData.prevYaw as number | undefined) ?? yaw
@@ -684,7 +893,13 @@ export function poseCreature(g: THREE.Group, time: number, moving: boolean, bite
       obj.rotation.x = obj.name.endsWith('r') ? -0.35 - flap * 0.45 : 0.35 + flap * 0.45
     } else if (obj.name.startsWith('arm')) {
       const n = Number(obj.name.slice(3))
-      obj.rotation.z = moving ? Math.sin(time * 7 + n) * 0.25 : Math.sin(time * 1.4 + n) * 0.05
+      if (g.userData.landWalk) {
+        const stride = moving ? Math.sin(time * 9 + n * 0.8) : Math.sin(time * 1.2 + n) * 0.08
+        obj.rotation.z = 0.55 + stride * 0.55
+        obj.rotation.x = stride * 0.25
+      } else {
+        obj.rotation.z = moving ? Math.sin(time * 7 + n) * 0.25 : Math.sin(time * 1.4 + n) * 0.05
+      }
     }
   })
 }

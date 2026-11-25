@@ -1,4 +1,5 @@
 import type { Loadout, Pick, Step } from './catalog'
+import { applyMorphStats, morphFx } from './evolve'
 import {
   ARM_COST,
   ARM_TYPES,
@@ -203,11 +204,15 @@ export function compute(load: Loadout, spent: number): Stats {
     s.fly += gem.fly
   }
   s.heat = (load.armor >= 2 ? 1 : 0) + (load.lungs >= 2 ? 1 : 0) + (load.spec === 'ruby' || load.spec === 'jade' ? 1 : 0)
-  const hide = SKINS[(load.skin || 1) - 1]
-  if (hide) {
-    s.def += hide.def
-    s.hp += hide.hp
-    s.spd += hide.spd
+  if (load.morph && load.morph.v) {
+    applyMorphStats(s, load.morph)
+  } else {
+    const hide = SKINS[(load.skin || 1) - 1]
+    if (hide) {
+      s.def += hide.def
+      s.hp += hide.hp
+      s.spd += hide.spd
+    }
   }
   if (spent <= 0 && load.size <= 0.5 && load.lungs < 1 && load.legs === 0) s.bite = Math.min(s.bite, 3)
   s.bite = Math.max(1, s.bite)
@@ -228,6 +233,7 @@ export function canDig(load: Loadout, spent: number): boolean {
 }
 
 export function landOk(load: Loadout, spent: number): boolean {
+  if (load.morph && morphFx(load.morph).landMove) return true
   return tierOf(spent) >= 2 && load.lungs >= 1
 }
 

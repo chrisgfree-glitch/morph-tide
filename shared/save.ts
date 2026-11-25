@@ -2,9 +2,10 @@ import { exportCarves, importCarves } from './terrain'
 import { applyWorldSnapshot, playerOf, snapshotWorld, type Ent, type World } from './sim'
 import type { Piece } from './build'
 import type { Loadout } from './catalog'
+import { convertToGuppy, ensureMorph, isLegacyLoad } from './evolve'
 
 export const SAVE_KEY = 'evo2.eden.v2'
-export const SAVE_VERSION = 3
+export const SAVE_VERSION = 4
 
 export interface GameSave {
   v: number
@@ -72,9 +73,14 @@ export function encodeGameSave(w: World): GameSave {
 
 export function applyGameSave(w: World, data: GameSave): void {
   const you = playerOf(w)
-  if (data.load) you.load = { ...you.load, ...data.load }
   if (typeof data.ep === 'number') you.ep = data.ep
   if (typeof data.spent === 'number') you.spent = data.spent
+  const legacy = isLegacyLoad(data.load) || (data.v ?? 0) < 4
+  if (legacy) you.load = convertToGuppy(data.load)
+  else if (data.load) {
+    you.load = { ...you.load, ...data.load }
+    ensureMorph(you.load)
+  }
   if (data.unlocked) you.unlocked = data.unlocked
   if (data.bag) you.bag = data.bag
   if (data.gems) you.gems = data.gems

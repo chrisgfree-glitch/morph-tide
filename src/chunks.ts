@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { CHUNK, WORLD_Z, dirtyChunks, groundAt } from '../shared/terrain'
+import { buildLandFlora } from './landflora'
 
 /** Smooth heightfield for one chunk. Digs and caves change the surface through groundAt. */
 export function meshChunk(cx: number, cz: number, cells: number): THREE.BufferGeometry | null {
@@ -96,6 +97,7 @@ export class ChunkWorld {
 
   private rocks: THREE.InstancedMesh[] = []
   private kelp: THREE.InstancedMesh[] = []
+  private flora: THREE.Object3D[] = []
   private sway = { value: 0 }
 
   tick(time: number): void {
@@ -113,9 +115,12 @@ export class ChunkWorld {
     this.rocks = []
     for (const blade of this.kelp) blade.removeFromParent()
     this.kelp = []
+    for (const f of this.flora) f.removeFromParent()
+    this.flora = []
     this.scatterRocks(cx, cz)
     this.scatterKelp(cx, cz)
     this.scatterGrass(cx, cz)
+    buildLandFlora(cx, cz, this.quality, this.group, this.flora)
   }
 
   private rockMat = rockMaterial()

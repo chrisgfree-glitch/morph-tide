@@ -3,8 +3,13 @@ import { GEMS, GUARD_CAP, HIDES, RAID_GAP, RAID_MIN_TIER, RAIDER_CAP, SHIELD_SEC
 import { digTick, fullColumn, tubeColumn, ventColumn, type Column } from './dig'
 import type { Piece } from './build'
 import { attackVolumes, bodyBox, mouthHit, volumeHits, youngBite } from './body'
-import { WATER, WORLD_Z, carve, fill, groundAt } from './terrain'
+import { CHUNK, WATER, WORLD_Z, carve, fill, groundAt } from './terrain'
 import { buySkin, buySpec, canDig, cellSeconds, chopSeconds, compute, defenseCap, gemChance, landOk, purchase, pvpFactor, tierOf, type Buy, type Progress } from './rules'
+import { agility, incomingMissChance, morphFx, morphOf, tryBuy, type BuyResult } from './evolve'
+import { createSpawners, kindById, mulberry32, seedSpawners, stepSpawners, type SpawnRequest, type Spawner } from './prey'
+import { createHealPlants, stepHealPlants, tryEatPlant, type HealPlant } from './plants'
+import { addDrops, forageDrop, gearFx, spendCraft } from './craft'
+import { scatterChunk } from './landcover'
 
 export interface Ent {
   id: number
@@ -53,6 +58,8 @@ export interface Ent {
   tele: number
   heavy: boolean
   peak: number
+  /** Spawner id for pooled, respawning prey. */
+  pack?: string
 }
 
 export interface DefenseInst {
@@ -104,11 +111,19 @@ export interface Raider {
 
 export interface Node {
   id: number
-  kind: 'mat' | 'tree' | 'rock'
+  kind: 'mat' | 'tree' | 'rock' | 'plant' | 'berry'
   mat: string
   x: number
+  z?: number
   amount: number
   hp: number
+}
+
+export interface Placeable {
+  x: number
+  y: number
+  z: number
+  life?: number
 }
 
 export interface World {
@@ -134,6 +149,13 @@ export interface World {
   gateOpen: boolean
   pieces: Piece[]
   noteCool: number
+  spawners: Spawner[]
+  plants: HealPlant[]
+  preySeed: number
+  traps: Placeable[]
+  cairns: Placeable[]
+  lures: Placeable[]
+  nest: Placeable | null
 }
 
 export interface Frame {
@@ -214,7 +236,201 @@ function make(partial: Partial<Ent> & Pick<Ent, 'id' | 'kind' | 'name' | 'x' | '
     stun: 0,
     slow: 0,
     online: partial.online ?? true,
+    pack: partial.pack,
   }
+}
+
+
+function preyCounts(w: World) {
+  const map = new Map<string, number>()
+  for (const e of w.ents) {
+    if (!e.alive || !e.pack) continue
+    map.set(e.pack, (map.get(e.pack) ?? 0) + 1)
+  }
+  return { of: (id: string) => map.get(id) ?? 0 }
+}
+
+function applySpawn(w: World, req: SpawnRequest): void {
+  const kind = kindById(req.kind)
+  if (!kind) return
+  const pooled = w.ents.find((e) => !e.alive && e.kind === 'npc' && e.species === kind.species)
+  if (pooled) {
+    pooled.alive = true
+    pooled.x = req.x
+    pooled.y = req.y
+    pooled.z = req.z
+    pooled.vx = 0
+    pooled.vy = 0
+    pooled.vz = 0
+    pooled.hp = kind.hp
+    pooled.maxHp = kind.hp
+    pooled.bias = kind.bias
+    pooled.spent = kind.spent
+    pooled.pack = req.spawnerId
+    pooled.home = req.x
+    pooled.stun = 0
+    pooled.biteCd = 0
+    return
+  }
+  const load = starterLoad()
+  load.size = kind.size
+  if (kind.region !== 'sea') {
+    load.lungs = 1
+    load.legs = 4
+    load.feet = 'claw'
+  }
+  if (kind.bias > 20) {
+    load.jaw = 'shark'
+    load.armor = 2
+  }
+  const fragile = kind.region === 'sea' && kind.bias <= 0
+  w.ents.push(
+    make({
+      id: w.nextId++,
+      kind: 'npc',
+      name: kind.name,
+      species: kind.species,
+      x: req.x,
+      y: req.y,
+      z: req.z,
+      region: kind.region,
+      bias: kind.bias,
+      spent: kind.spent,
+      load,
+      pack: req.spawnerId,
+      maxHp: fragile ? kind.hp : undefined,
+      hp: fragile ? kind.hp : undefined,
+    }),
+  )
+}
+
+function seedPrey(w: World): void {
+  w.spawners = createSpawners()
+  const rng = mulberry32(w.preySeed)
+  for (const req of seedSpawners(w.spawners, rng)) applySpawn(w, req)
+}
+
+function refillPrey(w: World, dt: number): void {
+  if (!w.spawners?.length) seedPrey(w)
+  const rng = mulberry32((w.preySeed + Math.floor(w.time * 8)) >>> 0)
+  for (const req of stepSpawners(w.spawners, preyCounts(w), dt, rng)) applySpawn(w, req)
+}
+
+export function applyMorphBuy(e: Ent, id: string, opts?: { confirm?: boolean; level?: number }): BuyResult {
+  const p = prog(e)
+  const result = tryBuy(p, id, opts)
+  if (result.ok) saveProg(e, p)
+  return result
+}
+
+
+function seedForage(w: World): void {
+  for (let cx = 2; cx <= 6; cx++) {
+    for (let cz = -3; cz <= 3; cz++) {
+      const scatter = scatterChunk(cx, cz, CHUNK, groundAt, 'mid')
+      for (const s of scatter.trees) {
+        w.nodes.push({ id: w.nextId++, kind: 'tree', mat: s.kind, x: s.x, z: s.z, amount: 3, hp: 8 })
+      }
+      for (const s of scatter.rocks) {
+        if (s.kind === 'pebble' && (s.x * 10) % 3 > 1) continue
+        w.nodes.push({ id: w.nextId++, kind: 'rock', mat: s.x < 80 ? 'coral-rock' : 'stone', x: s.x, z: s.z, amount: 2, hp: 6 })
+      }
+      for (const s of scatter.plants) {
+        w.nodes.push({ id: w.nextId++, kind: 'plant', mat: s.kind, x: s.x, z: s.z, amount: 2, hp: 3 })
+      }
+      for (const s of scatter.berries) {
+        w.nodes.push({ id: w.nextId++, kind: 'berry', mat: 'berry', x: s.x, z: s.z, amount: 2, hp: 3 })
+      }
+    }
+  }
+}
+
+function forageNear(w: World, you: Ent, ev: Evt[], reach = 2.4): boolean {
+  let best: Node | undefined
+  let bestD = reach * reach
+  for (const n of w.nodes) {
+    if (n.amount <= 0) continue
+    if (n.kind !== 'tree' && n.kind !== 'rock' && n.kind !== 'plant' && n.kind !== 'berry') continue
+    const dz = (n.z ?? 0) - you.z
+    const d = (n.x - you.x) * (n.x - you.x) + dz * dz
+    if (d < bestD) {
+      bestD = d
+      best = n
+    }
+  }
+  if (!best) return false
+  const kind = best.kind === 'tree' ? 'tree' : best.kind === 'rock' ? 'rock' : best.kind === 'berry' ? 'berry' : 'plant'
+  const drops = forageDrop(kind, best.mat)
+  const text = addDrops(you.bag, drops)
+  best.amount -= 1
+  best.hp = 0
+  if (best.amount <= 0) best.amount = 0
+  ev.push({ t: 'gather', x: best.x, y: you.y, text })
+  w.banner = `Gathered ${text}`
+  w.bannerT = 1.4
+  return true
+}
+
+export function applyCraft(e: Ent, w: World, id: string): { ok: boolean; reason: string } {
+  const result = spendCraft(e.bag, id)
+  if (!result.ok || !result.recipe) return result
+  const rec = result.recipe
+  if (rec.heal) {
+    const before = e.hp
+    e.hp = Math.min(e.maxHp, e.hp + rec.heal)
+    return { ok: true, reason: `Poultice heals ${Math.round(e.hp - before)} HP.` }
+  }
+  if (rec.use === 'gear' && rec.id === 'gourd') e.air = Math.max(e.air, 6)
+  if (rec.place === 'nest') {
+    w.nest = { x: e.x, y: e.y, z: e.z }
+    e.home = e.x
+    return { ok: true, reason: 'Twig nest set. You will wake here if you fall.' }
+  }
+  if (rec.place === 'trap') {
+    w.traps.push({ x: e.x + Math.cos(e.yaw) * 1.4, y: e.y, z: e.z + Math.sin(e.yaw) * 1.4, life: 90 })
+    return { ok: true, reason: 'Thorn trap set.' }
+  }
+  if (rec.place === 'cairn') {
+    w.cairns.push({ x: e.x, y: e.y, z: e.z })
+    return { ok: true, reason: 'Cairn raised.' }
+  }
+  if (rec.place === 'lure') {
+    w.lures.push({ x: e.x, y: e.y, z: e.z, life: 45 })
+    return { ok: true, reason: 'Moss lure laid out.' }
+  }
+  return result
+}
+
+
+function stepCraftables(w: World, dt: number, ev: Evt[], you: Ent): void {
+  const gear = gearFx(you.bag)
+  for (const trap of w.traps) {
+    if (trap.life != null) trap.life -= dt
+    for (const e of w.ents) {
+      if (!e.alive) continue
+      const d = Math.hypot(e.x - trap.x, e.z - (trap.z ?? 0))
+      if (d < 1.3 && e.stun < 0.4) {
+        e.stun = Math.max(e.stun, 1.4)
+        ev.push({ t: 'note', x: e.x, y: e.y, text: e.id === you.id ? 'Thorn trap!' : `${e.name} is stunned` })
+      }
+    }
+  }
+  w.traps = w.traps.filter((t) => t.life == null || t.life > 0)
+  for (const lure of w.lures) {
+    if (lure.life != null) lure.life -= dt
+    for (const e of w.ents) {
+      if (!e.alive || e.kind === 'player' || e.bias > 10) continue
+      const dx = lure.x - e.x
+      const dz = (lure.z ?? 0) - e.z
+      const d = Math.hypot(dx, dz)
+      if (d < 16 && d > 0.4) {
+        e.x += (dx / d) * 1.8 * dt
+        e.z += (dz / d) * 1.8 * dt
+      }
+    }
+  }
+  w.lures = w.lures.filter((t) => t.life == null || t.life > 0)
+  void gear
 }
 
 export function createWorld(): World {
@@ -241,46 +457,18 @@ export function createWorld(): World {
     gateOpen: false,
     pieces: [],
     noteCool: 0,
+    spawners: [],
+    plants: [],
+    preySeed: 0x51ed2e3,
+    traps: [],
+    cairns: [],
+    lures: [],
+    nest: null,
   }
   w.ents.push(make({ id: w.nextId++, kind: 'player', name: 'Tidewisp', species: 'you', x: 8, y: 2.4 }))
-  const seeds: [string, string, number, number, Ent['region'], number][] = [
-    ['Speck fry', 'shrimp', 6.4, 2.2, 'sea', 0],
-    ['Pebble fry', 'shrimp', 7.6, 2.7, 'sea', 0],
-    ['Shimmer fry', 'shrimp', 8.8, 3.1, 'sea', 0],
-    ['Dab shrimp', 'shrimp', 9.6, 2.0, 'sea', 0],
-    ['Glass minnow', 'shrimp', 11.2, 2.8, 'sea', 0],
-    ['Riffle fry', 'shrimp', 12.4, 2.3, 'sea', 0],
-    ['Tide fry', 'shrimp', 14.0, 2.6, 'sea', 0],
-    ['Silk fry', 'shrimp', 15.5, 3.0, 'sea', 0],
-    ['Brine shrimp', 'shrimp', 17.2, 3.2, 'sea', 0],
-    ['Silt shrimp', 'shrimp', 19.0, 2.4, 'sea', 0],
-    ['Kelp dart', 'needle', 28, 5, 'sea', 2],
-    ['Ghost bell', 'bell', 40, 4, 'sea', 6],
-    ['Plate bug', 'plate', 52, 2.4, 'sea', 10],
-    ['Shore crab', 'crab', 76, 1.1, 'land', 0],
-    ['Amber beetle', 'beetle', 84, 1.1, 'land', 2],
-    ['Reed newt', 'newt', 92, 1.1, 'land', 1],
-    ['Dune lizard', 'lizard', 100, 1.1, 'land', 6],
-    ['Inland hunter', 'hunter', 118, 1.2, 'land', 26],
-    ['Plate brute', 'brute', 132, 1.2, 'land', 34],
-    ['Magma beetle', 'magma', 178, 1.3, 'volcano', 20],
-  ]
-  for (const [name, species, x, y, region, bias] of seeds) {
-    const spent = bias > 20 ? 100 : bias > 8 ? 40 : 8
-    const load = starterLoad()
-    if (bias > 0) load.size = 0.92
-    if (region !== 'sea') {
-      load.lungs = 1
-      load.legs = 4
-      load.feet = 'claw'
-    }
-    if (bias > 20) {
-      load.jaw = 'shark'
-      load.armor = 2
-    }
-    const fragile = region === 'sea' && bias <= 0
-    w.ents.push(make({ id: w.nextId++, kind: 'npc', name, species, x, y, region, bias, spent, load, maxHp: fragile ? 3 : undefined, hp: fragile ? 3 : undefined }))
-  }
+  seedPrey(w)
+  w.plants = createHealPlants()
+  seedForage(w)
   const hunter = w.ents.find((e) => e.species === 'hunter')
   w.bases.push({
     id: w.nextId++,
@@ -397,7 +585,10 @@ function regionAt(x: number): Ent['region'] {
 function hurt(e: Ent, amount: number): void {
   if (e.iframes > 0) return
   const def = compute(e.load, e.spent).def
-  e.hp -= amount / (1 + def * 0.12)
+  const fx = e.load.morph ? morphFx(e.load.morph) : null
+  let dmg = amount / (1 + def * 0.12)
+  if (fx) dmg *= Math.max(0.15, 1 - fx.dmgReduce - fx.biteResist * 0.5)
+  e.hp -= dmg
   if (e.hp <= 0) {
     e.hp = 0
     e.alive = false
@@ -430,6 +621,10 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   const you = playerOf(w)
   if (!you.alive) return ev
   const stats = compute(you.load, you.spent)
+  const gear = gearFx(you.bag)
+  stats.def += gear.def
+  stats.bite += gear.bite
+  stats.swim += gear.swim
   const box = bodyBox(you.load, you.spent, false, you.species)
   const ground = 1.12
   const slow = you.slow > 0 ? 0.55 : 1
@@ -449,7 +644,7 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   if (submerged) {
     const sprint = input.sprint ? 1.32 : 1
     const maxV = ((3.3 + stats.swim * 0.08) * slow * sprint) / (1 + Math.max(0, drag - 1) * 0.28)
-    const accel = 13 / Math.sqrt(box.mass)
+    const accel = (13 / Math.sqrt(box.mass)) * agility(morphOf(you.load)).accel
     const idle = Math.abs(fwd) < 0.08 && Math.abs(strafe) < 0.08 && Math.abs(rise) < 0.08
     const climb = fwd * sp + rise * 0.85
     const ty = idle ? -0.32 / box.mass : climb * maxV * 0.7
@@ -463,7 +658,7 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     you.vy -= grav * dt
     const sprint = input.sprint ? 1.35 : 1
     const maxRun = ((4.4 + stats.spd * 0.1) * slow * sprint) / Math.sqrt(box.mass)
-    const runA = (20 / box.mass) * (you.stun > 0 ? 0.2 : 1)
+    const runA = (20 / box.mass) * (you.stun > 0 ? 0.2 : 1) * agility(morphOf(you.load)).accel
     const flop = you.x >= 62 && !landOk(you.load, you.spent)
     you.vx = approach(you.vx, flop ? -1.1 : wishX * maxRun, flop ? 6 : runA, dt)
     you.vz = approach(you.vz, flop ? 0 : wishZ * maxRun, flop ? 6 : runA, dt)
@@ -473,7 +668,7 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     if (!flop && you.load.wings > 0 && input.jump && you.y > ground + 0.25) you.vy = Math.max(you.vy, Math.min(4.5, stats.fly) / box.mass)
     if (flop && you.y <= ground + 0.08) you.vy = Math.max(you.vy, Math.sin(w.time * 9) * 1.1)
     const heat = you.region === 'volcano' && stats.heat <= 0
-    you.air -= dt * (heat ? 1.6 : 1)
+    you.air -= dt * (heat ? 1.6 : 1) * gear.dry
     if (you.x < 72) you.air = Math.min(stats.air, you.air + dt * 6)
     if (you.load.lungs > 0 && you.air <= 0) {
       you.air = 0
@@ -508,6 +703,27 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   you.x += you.vx * dt
   you.y += you.vy * dt
   you.z += you.vz * dt
+  if (!w.plants?.length) w.plants = createHealPlants()
+  stepHealPlants(w.plants, dt)
+  const mouth = bodyBox(you.load, you.spent, false, you.species)
+  const reach = Math.max(0.7, mouth.mouth + mouth.biteR + 0.45)
+  const tuft = tryEatPlant(w.plants, you.x + Math.cos(you.yaw) * mouth.mouth * 0.6, you.y, you.z + Math.sin(you.yaw) * mouth.mouth * 0.6, reach)
+  if (tuft) {
+    const before = you.hp
+    you.hp = Math.min(you.maxHp, you.hp + tuft.heal)
+    const gained = you.hp - before
+    ev.push({ t: 'heal', x: tuft.x, y: tuft.y, text: gained > 0 ? `+${Math.round(gained)} HP` : 'Full' })
+    if (gained > 0) {
+      w.banner = gained > 0 ? 'Healing plants. +HP, no EP.' : w.banner
+      w.bannerT = Math.max(w.bannerT, 1.2)
+    }
+  }
+
+  if (!submerged && landOk(you.load, you.spent)) {
+    const floor = groundAt(you.x, you.z, you.y)
+    if (you.y < floor + 0.16) you.y = floor + 0.16
+  }
+
   const floorY = groundAt(you.x, you.z, you.y) + (submerged ? 0.35 : 0)
   if (!submerged && you.y <= floorY && you.vy <= 0) {
     const drop = you.peak - floorY
@@ -573,8 +789,9 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
       ev.push({ t: 'hit', x: foe.x, y: foe.y, text: `${dmg}` })
       if (!foe.alive) rewardKill(w, you, foe, ev)
       else {
-        you.ep += 1
-        ev.push({ t: 'eat', x: foe.x, y: foe.y, text: '+1 EP' })
+        const bonus = 1 + (gearFx(you.bag).epBonus > 0 ? 1 : 0)
+        you.ep += bonus
+        ev.push({ t: 'eat', x: foe.x, y: foe.y, text: `+${bonus} EP` })
       }
     }
     for (const base of w.bases) {
@@ -592,7 +809,25 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     }
   }
   if (input.bite && (you.biteCd > 0 || you.windup > 0 || you.recover > 0 || you.stun > 0)) you.biteBuf = 0.32
-  const wantBite = (input.bite || you.biteBuf > 0) && you.biteCd <= 0 && you.windup <= 0 && you.recover <= 0 && you.stun <= 0
+  let autoContact = false
+  if (you.kind === 'player' && you.biteCd <= 0 && you.windup <= 0 && you.recover <= 0 && you.stun <= 0) {
+    const mine = bodyBox(you.load, you.spent, false, you.species)
+    const vols = attackVolumes(you.load, you.spent, false, you.species, you.x, you.y, you.z, you.yaw)
+    for (const foe of w.ents) {
+      if (!foe.alive || foe.id === you.id || foe.kind === 'meat') continue
+      if (foe.clan && foe.clan === you.clan) continue
+      const theirs = bodyBox(foe.load, foe.spent, foe.kind === 'boss', foe.species)
+      const pad = theirs.rad + theirs.len * 0.15
+      if (
+        volumeHits(vols, foe.x, foe.y, foe.z, pad) ||
+        mouthHit(you.x, you.y, you.z, you.yaw, mine, foe.x, foe.y, foe.z, theirs)
+      ) {
+        autoContact = true
+        break
+      }
+    }
+  }
+  const wantBite = (input.bite || you.biteBuf > 0 || autoContact) && you.biteCd <= 0 && you.windup <= 0 && you.recover <= 0 && you.stun <= 0
   if (wantBite) {
     you.biteBuf = 0
     you.windup = you.combo >= 2 ? 0.07 : 0.03
@@ -622,7 +857,12 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     }
     ev.push({ t: 'bite', x: you.x, y: you.y, text: '' })
   }
-  if (input.dig) digAt(w, you, dt, ev)
+  if (input.dig) {
+    if (you.x >= 60 && forageNear(w, you, ev)) {
+      /* land gather with dig */
+    } else digAt(w, you, dt, ev)
+  }
+  if (input.bite && you.x >= 60) forageNear(w, you, ev, 1.8)
   if (input.use) {
     const near = w.nodes.some((n) => n.amount > 0 && Math.abs(n.x - you.x) < 2.2 && Math.abs(you.z) < 2.2)
     if (near) useNode(w, you, ev)
@@ -634,17 +874,34 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   caveIns(w, dt, ev)
   fallDebris(w, dt, ev)
   raids(w, dt, ev)
+  refillPrey(w, dt)
+  stepCraftables(w, dt, ev, you)
   for (const e of w.ents) {
-    if (!e.alive && e.kind === 'npc' && (e.respawn -= dt) <= 0) {
+    if (!e.alive && e.kind === 'npc' && !e.pack && (e.respawn -= dt) <= 0) {
       e.alive = true
       e.hp = e.maxHp
       e.x = e.home
     }
   }
   if (you.hp <= 0) {
-    you.alive = false
-    w.over = true
-    ev.push({ t: 'down', x: you.x, y: you.y, text: 'The body fails' })
+    if (w.nest) {
+      you.hp = Math.max(8, Math.round(you.maxHp * 0.6))
+      you.alive = true
+      you.x = w.nest.x
+      you.y = w.nest.y
+      you.z = w.nest.z
+      you.vx = 0
+      you.vy = 0
+      you.vz = 0
+      you.iframes = 1.6
+      w.banner = 'You wake in the twig nest.'
+      w.bannerT = 3
+      ev.push({ t: 'note', x: you.x, y: you.y, text: 'You wake in the twig nest' })
+    } else {
+      you.alive = false
+      w.over = true
+      ev.push({ t: 'down', x: you.x, y: you.y, text: 'The body fails' })
+    }
   }
   if (!w.ents.some((e) => e.kind === 'boss' && e.alive) && you.x > 128 && !w.won && !w.ents.some((e) => e.kind === 'boss')) {
     const load = starterLoad()
@@ -854,16 +1111,33 @@ function autoEvolve(e: Ent): void {
 }
 
 function npcThink(w: World, dt: number, ev: Evt[]): void {
-  const living = w.ents.filter((e) => e.alive && e.kind !== 'meat')
+  const you = playerOf(w)
+  const near = w.ents.filter((e) => e.alive && e.kind !== 'meat' && Math.abs(e.x - you.x) + Math.abs(e.z - you.z) < 40)
   for (const e of w.ents) {
     if (!e.alive || e.kind === 'player' || e.kind === 'meat') continue
+    const far = Math.abs(e.x - you.x) + Math.abs(e.z - you.z) > 36
+    if (far) {
+      e.wander -= dt
+      if (e.wander <= 0) {
+        e.wander = 2.4
+        e.wdir *= -1
+      }
+      e.yaw += e.wdir * dt * 0.45
+      e.x += Math.cos(e.yaw) * 1.1 * dt
+      e.z += Math.sin(e.yaw) * 1.1 * dt
+      if (e.region === 'sea') e.x = Math.max(4, Math.min(64, e.x))
+      if (e.region === 'land') e.x = Math.max(70, Math.min(160, e.x))
+      if (e.region === 'volcano') e.x = Math.max(170, Math.min(208, e.x))
+      e.z = Math.max(-WORLD_Z + 2, Math.min(WORLD_Z - 2, e.z))
+      continue
+    }
     e.stun = Math.max(0, e.stun - dt)
     e.slow = Math.max(0, e.slow - dt)
     e.biteCd = Math.max(0, e.biteCd - dt)
     let mode: 'wander' | 'chase' | 'flee' = 'wander'
     let target: Ent | undefined
     let best = 99
-    for (const o of living) {
+    for (const o of near) {
       if (o.id === e.id || (o.clan && o.clan === e.clan)) continue
       const d = Math.abs(o.x - e.x) + Math.abs(o.y - e.y)
       if (d > 16) continue
@@ -928,16 +1202,30 @@ function npcThink(w: World, dt: number, ev: Evt[]): void {
       if (e.tele > 0) wish *= 0.08
       if (teleWas > 0 && e.tele === 0 && inMouth) {
         e.biteCd = 0.7
-        const dmg = Math.max(1, Math.round((3 + e.bias / 10) * (0.8 + box.mass * 0.15)))
-        hurt(target, dmg)
-        target.vx += Math.cos(e.yaw) * 2.2
-        target.vz += Math.sin(e.yaw) * 2.2
-        target.stun = Math.max(target.stun, 0.07)
-        w.shake = Math.max(w.shake, 0.1)
-        ev.push({ t: 'hit', x: target.x, y: target.y, text: `${dmg}` })
-        if (!target.alive && target.kind !== 'player') {
-          e.ep += 3 + e.bias / 10
-          autoEvolve(e)
+        let dmg = Math.max(1, Math.round((3 + e.bias / 10) * (0.8 + box.mass * 0.15)))
+        if (target.kind === 'player' && target.load.morph) {
+          const fx = morphFx(target.load.morph)
+          const miss = Math.min(0.75, incomingMissChance(fx) + gearFx(target.bag).evasion)
+          const roll = mulberry32((Math.floor(w.time * 1000) ^ e.id ^ target.id) >>> 0)()
+          if (roll < miss) {
+            ev.push({ t: 'note', x: target.x, y: target.y, text: 'Missed' })
+            dmg = 0
+          } else if (fx.thorns > 0) {
+            hurt(e, fx.thorns)
+            ev.push({ t: 'hit', x: e.x, y: e.y, text: `${fx.thorns}` })
+          }
+        }
+        if (dmg > 0) {
+          hurt(target, dmg)
+          target.vx += Math.cos(e.yaw) * 2.2
+          target.vz += Math.sin(e.yaw) * 2.2
+          target.stun = Math.max(target.stun, 0.07)
+          w.shake = Math.max(w.shake, 0.1)
+          ev.push({ t: 'hit', x: target.x, y: target.y, text: `${dmg}` })
+          if (!target.alive && target.kind !== 'player') {
+            e.ep += 3 + e.bias / 10
+            autoEvolve(e)
+          }
         }
       }
     }

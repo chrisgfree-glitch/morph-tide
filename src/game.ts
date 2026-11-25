@@ -1,13 +1,15 @@
 import * as THREE from 'three'
-import { ARM_TYPES, BREAKERS, COLOR_NAMES, COLORS, CUTTERS, FEET, FIN_LINE, GEMS, HORNS, JAWS, ROCK_TINT, SKINS, TAIL_LINE, TEETH, TREE_TINT, TIER_SPENT, WING_STYLES, treeById } from '../shared/catalog'
-import { createWorld, nearestInCone, playerOf, step, tryPurchase, type Ent, type Frame, type World } from '../shared/sim'
+import { COLOR_NAMES, COLORS, ROCK_TINT, TREE_TINT, TIER_SPENT, treeById } from '../shared/catalog'
+import { applyCraft, applyMorphBuy, createWorld, nearestInCone, playerOf, step, type Ent, type Frame, type World } from '../shared/sim'
 import { readPad, type PadLayer } from '../shared/pad'
 import { SAVE_KEY, applyGameSave, encodeGameSave, parseGameSave, serializeGameSave } from '../shared/save'
 import { PIECES, canPlace, costLine, nearestPiece, pieceById, placePiece, refundPiece } from '../shared/build'
-import { canDig, fishGoal, growFish, hideStock, tierOf } from '../shared/rules'
+import { EXTRA_REAR, agility, equippedLabel, morphFx, morphOf, partsIn, switchBranch, type Category } from '../shared/evolve'
+import { RECIPES, canCraft } from '../shared/craft'
+import { canDig, compute, fishGoal, growFish, tierOf } from '../shared/rules'
 import { audio } from './audio'
 import { attackVolumes, type HitVol } from '../shared/body'
-import { buildCreature, creatureKey, poseCreature } from './mesh'
+import { PREY_TINT, buildCreature, creatureKey, poseCreature, preyInstanceGeo } from './mesh'
 import { ChunkWorld } from './chunks'
 import { buildWater, loadPbr, setTerrainQuality } from './world3d'
 import { WATER, groundAt } from '../shared/terrain'
@@ -26,7 +28,11 @@ export class Game {
   mapOpen = false
   /** Solo stays false, so the map pauses. A live shard session sets this and the map stays an overlay. */
   liveMultiplayer = false
-  private evoTab: 'parts' | 'skin' = 'parts'
+  private evoCat: Category | 'craft' = 'skin'
+  private pendingBuy: { id: string; level?: number } | null = null
+  private digPulse = 0
+  private preyInst = new Map<string, THREE.InstancedMesh>()
+  private healInst: THREE.InstancedMesh | null = null
   buildOpen = false
   name = 'Tidewisp'
   private renderer: THREE.WebGLRenderer
@@ -387,6 +393,24 @@ export class Game {
       this.start()
     })
     document.getElementById('evo-close')?.addEventListener('click', () => this.toggleEvo(false))
+    document.getElementById('evo-dig')?.addEventListener('click', () => this.digFromEvo())
+    document.getElementById('evo-fish')?.addEventListener('click', () => this.pickBranch('fish'))
+    document.getElementById('evo-octo')?.addEventListener('click', () => this.pickBranch('octopus'))
+    document.getElementById('evo-prompt-yes')?.addEventListener('click', () => this.confirmSwap(true))
+    document.getElementById('evo-prompt-no')?.addEventListener('click', () => this.confirmSwap(false))
+    document.getElementById('t-select')?.addEventListener('click', () => this.toggleEvo())
+    document.getElementById('t-pause')?.addEventListener('click', () => this.togglePause())
+    document.getElementById('pause-map')?.addEventListener('click', () => {
+      this.togglePause(false)
+      this.toggleMap(true)
+    })
+    document.getElementById('pause-eye')?.addEventListener('click', () => {
+      this.firstPerson = !this.firstPerson
+    })
+    document.getElementById('pause-quit')?.addEventListener('click', () => {
+      this.togglePause(false)
+      this.toggleQuit(true)
+    })
     document.getElementById('build-close')?.addEventListener('click', () => this.toggleBuild(false))
     document.getElementById('settings-close')?.addEventListener('click', () => this.togglePause(false))
     document.getElementById('t-settings')?.addEventListener('click', () => this.toggleSelect())
@@ -1045,103 +1069,185 @@ export class Game {
     })
   }
 
+  private digFromEvo(): void {
+    const you = playerOf(this.world)
+    if (!canDig(you.load, you.spent)) {
+      this.world.banner = 'Need digging tools before you can dig.'
+      this.world.bannerT = 2
+      return
+    }
+    this.toggleEvo(false)
+    this.digPulse = 0.55
+  }
+
+  private pickBranch(to: 'fish' | 'octopus'): void {
+    const you = playerOf(this.world)
+    const result = switchBranch(you, to)
+    this.world.banner = result.message ?? (result.ok ? `Now ${to}` : 'Could not switch')
+    this.world.bannerT = 2
+    this.keysigs.delete(you.id)
+    this.renderEvo()
+    this.save()
+  }
+
+  private confirmSwap(yes: boolean): void {
+    const prompt = document.getElementById('evo-prompt')
+    if (prompt) prompt.hidden = true
+    const pending = this.pendingBuy
+    if (!yes || !pending) {
+      this.pendingBuy = null
+      this.renderEvo()
+      return
+    }
+    this.buyPart(pending.id, pending.level, true)
+  }
+
+  private buyPart(id: string, level?: number, confirm = false): void {
+    const you = playerOf(this.world)
+    const result = applyMorphBuy(you, id, { confirm, level })
+    if (!result.ok && result.prompt) {
+      this.pendingBuy = { id, level }
+      const box = document.getElementById('evo-prompt')
+      const text = document.getElementById('evo-prompt-text')
+      if (text) text.textContent = result.prompt.message
+      if (box) box.hidden = false
+      this.focusIndex = 0
+      this.markFocus()
+      return
+    }
+    this.pendingBuy = null
+    this.world.banner = result.ok ? (result.message ?? 'Grew') : result.reason
+    this.world.bannerT = 2
+    if (result.ok) this.feel('evolve')
+    else audio.blip('hurt')
+    this.keysigs.delete(you.id)
+    this.renderEvo()
+    if (result.ok) this.save()
+  }
+
   private renderEvo(): void {
     const you = playerOf(this.world)
-    const tier = tierOf(you.spent)
-    const root = document.getElementById('evo-body')
+    const morph = morphOf(you.load)
     const ep = document.getElementById('evo-ep')
-    if (ep) ep.textContent = `DNA ${Math.floor(you.ep)} · tier ${tier} · skin ${you.load.skin || 1}`
-    this.paintPreview()
-    if (!root) return
-    const tabs = `<p class="tabs"><button data-kind="tab" data-id="parts">Parts</button><button data-kind="tab" data-id="skin">Skin</button></p>`
-    if (this.evoTab === 'skin') {
-      const cur = Math.max(1, you.load.skin || 1)
-      const now = SKINS[cur - 1]
-      const next = SKINS[cur]
-      const cost = next
-        ? `${next.dna} DNA${next.hides ? ` · ${next.hides} hides` : ''}${next.mat ? ` · ${next.matN} ${next.mat}` : ''}${next.gem ? ` · ${next.gemN} ${next.gem}` : ''}`
-        : 'complete'
-      root.innerHTML = [
-        tabs,
-        `<h3>Skin ${cur}/20 · ${now?.name ?? 'Bare skin'}</h3>`,
-        `<p>Resistance +${now?.def ?? 0} · HP +${now?.hp ?? 0}${now?.spd ? ` · speed ${now.spd}` : ''}</p>`,
-        `<p>Held: ${Math.floor(you.ep)} DNA · ${hideStock(you.bag)} hides</p>`,
-        next ? `<button data-kind="skin" data-id="next">Grow ${next.name} · ${cost}</button>` : '<p>Legendary inlay is complete.</p>',
+    const branchEl = document.getElementById('evo-branch')
+    if (ep) ep.textContent = `${Math.floor(you.ep)} EP`
+    if (branchEl) branchEl.textContent = morph.branch === 'guppy' ? 'Guppy' : morph.branch === 'fish' ? 'Fish branch' : 'Octopus branch'
+    document.getElementById('evo-fish')?.classList.toggle('on', morph.branch === 'fish')
+    document.getElementById('evo-octo')?.classList.toggle('on', morph.branch === 'octopus')
+    const fx = morphFx(morph)
+    const statsEl = document.getElementById('evo-stats')
+    if (statsEl) {
+      const s = compute(you.load, you.spent)
+      statsEl.innerHTML = [
+        `<p><strong>${Math.floor(you.ep)} EP</strong> · ${morph.branch}</p>`,
+        `<p>HP ${Math.ceil(you.hp)}/${you.maxHp} · bite ${s.bite.toFixed(1)} · def ${s.def.toFixed(1)}</p>`,
+        `<p>Speed ${s.spd.toFixed(1)} · swim ${s.swim.toFixed(1)}</p>`,
+        `<p>Turn +${Math.round(fx.turn * 100)}% · accel +${Math.round(fx.accel * 100)}%</p>`,
+        `<p>Skin: ${equippedLabel(morph, 'skin')}</p>`,
+        `<p>Head: ${equippedLabel(morph, 'head')}</p>`,
+        `<p>Horn: ${equippedLabel(morph, 'horn')}</p>`,
+        `<p>Fins: ${equippedLabel(morph, 'fin')}</p>`,
+        `<p>Dorsal: ${equippedLabel(morph, 'dorsal')}</p>`,
+        `<p>Rear fins: ${equippedLabel(morph, 'rear')}${morph.extraRear ? ` · extras ${morph.extraRear}/2` : ''}</p>`,
+        `<p>Tail: ${equippedLabel(morph, 'tail')}</p>`,
+        morph.limb ? `<p>Limbs: ${equippedLabel(morph, 'limb')}</p>` : '',
       ].join('')
+    }
+    const cats: { id: Category | 'craft'; name: string }[] = [
+      { id: 'skin', name: 'Skins' },
+      { id: 'head', name: 'Heads' },
+      { id: 'horn', name: 'Horns' },
+      { id: 'fin', name: 'Fins' },
+      { id: 'dorsal', name: 'Dorsals' },
+      { id: 'rear', name: 'Rear Fins' },
+      { id: 'tail', name: 'Tails' },
+      { id: 'limb', name: 'Limbs' },
+      { id: 'craft', name: 'Craft' },
+    ]
+    const nav = document.getElementById('evo-cats')
+    if (nav) {
+      nav.innerHTML = cats
+        .map((c) => `<button type="button" data-cat="${c.id}" class="${c.id === this.evoCat ? 'on' : ''}">${c.name}</button>`)
+        .join('')
+      nav.querySelectorAll('button').forEach((btn) =>
+        btn.addEventListener('click', () => {
+          this.evoCat = ((btn as HTMLButtonElement).dataset.cat as Category | 'craft') || 'skin'
+          this.renderEvo()
+        }),
+      )
+    }
+    const root = document.getElementById('evo-body')
+    if (root && this.evoCat === 'craft') {
+      const bagBits = Object.entries(you.bag)
+        .filter(([, n]) => n > 0)
+        .map(([k, n]) => `${k} ${Math.floor(n)}`)
+        .join(' · ')
+      const cards = [
+        `<p class="craft-bag"><strong>Inventory</strong> ${bagBits || 'empty — bite or dig plants, wood and rocks on land'}</p>`,
+      ]
+      for (const rec of RECIPES) {
+        const cost = Object.entries(rec.cost).map(([k, n]) => `${n} ${k}`).join(', ')
+        const have = canCraft(you.bag, rec.id).ok
+        const owned = (you.bag[rec.id] ?? 0) > 0 ? ' · owned' : ''
+        cards.push(
+          `<button type="button" class="part-card" data-craft="${rec.id}" ${have ? '' : 'data-need="1"'}>` +
+            `<strong>${rec.name}${owned}</strong>` +
+            `<span class="meta">${cost}</span>` +
+            `<span class="meta">${rec.desc}</span>` +
+            `</button>`,
+        )
+      }
+      root.innerHTML = cards.join('')
       root.querySelectorAll('button').forEach((btn) =>
         btn.addEventListener('click', () => {
-          const kind = (btn as HTMLButtonElement).dataset.kind ?? ''
-          if (kind === 'tab') {
-            this.evoTab = ((btn as HTMLButtonElement).dataset.id as 'parts' | 'skin') ?? 'parts'
-            this.renderEvo()
-            return
-          }
-          const result = tryPurchase(you, 'skin', 'next')
+          const id = (btn as HTMLButtonElement).dataset.craft ?? ''
+          const result = applyCraft(you, this.world, id)
           this.world.banner = result.reason
           this.world.bannerT = 2
           if (result.ok) this.feel('evolve')
           else audio.blip('hurt')
-          this.keysigs.delete(you.id)
           this.renderEvo()
           this.save()
         }),
       )
+      this.paintPreview()
+      this.markFocus()
       return
     }
-    const row = (kind: string, id: string, name: string, need: number, cost: number, on: boolean) => {
-      const locked = tier < need
-      return `<button data-kind="${kind}" data-id="${id}" ${locked ? 'disabled' : ''}>${locked ? '🔒 ' : ''}${name}${on ? ' · on' : ''}${locked ? ` · Unlocks at tier ${need}` : cost ? ` · ${cost} EP` : ''}</button>`
+    if (root) {
+      const cards: string[] = []
+      const list = this.evoCat === 'rear' ? [...partsIn('rear'), EXTRA_REAR] : partsIn(this.evoCat as Category)
+      for (const def of list) {
+        const equipped =
+          this.evoCat === 'rear' && def.category === 'extraRear'
+            ? morph.extraRear > 0
+            : equippedLabel(morph, def.category).toLowerCase().includes(def.name.toLowerCase().replace(/ fin$/, '').split(' ')[0] ?? def.id)
+        const hornLv = def.category === 'horn' && morph.horn === def.id ? morph.hornLv : 0
+        const nextLv = def.costs ? Math.min(3, hornLv + 1) : 1
+        const cost = def.costs ? def.costs[nextLv - 1]! : def.cost
+        const place = def.place ? ` · ${def.place === 'rear' ? 'low toward the tail' : def.place}` : ''
+        const lvl = def.costs ? ` · ${['', 'I', 'II', 'III'][hornLv] || '—'} ` : ''
+        const extra = def.category === 'extraRear' ? ` · ${morph.extraRear}/2` : ''
+        const can = you.ep >= cost
+        cards.push(
+          `<button type="button" class="part-card${equipped ? ' on' : ''}" data-id="${def.id}" data-level="${nextLv}" ${!can ? 'data-need="1"' : ''}>` +
+            `<strong>${def.name}${lvl}${extra}</strong>` +
+            `<span class="meta">${cost} EP${place}</span>` +
+            `<span class="meta">${def.desc}</span>` +
+            `</button>`,
+        )
+      }
+      root.innerHTML = cards.join('') || '<p>No parts in this category.</p>'
+      root.querySelectorAll('button').forEach((btn) =>
+        btn.addEventListener('click', () => {
+          const id = (btn as HTMLButtonElement).dataset.id ?? ''
+          const level = Number((btn as HTMLButtonElement).dataset.level || '0') || undefined
+          this.buyPart(id, level)
+        }),
+      )
     }
-    const blocks: string[] = [tabs]
-    blocks.push('<h3>Jaws</h3>')
-    for (const j of JAWS) blocks.push(row('jaw', j.id, j.name, j.tier, j.cost, you.load.jaw === j.id))
-    blocks.push('<h3>Teeth</h3>')
-    for (const j of TEETH) blocks.push(row('teeth', j.id, j.name, j.tier, j.cost, you.load.teeth === j.id))
-    blocks.push('<h3>Horns</h3>')
-    for (const j of HORNS) blocks.push(row('horn', j.id, j.name, j.tier, j.cost, you.load.horn === j.id))
-    blocks.push('<h3>Lines</h3>')
-    blocks.push(row('fin', 'next', `Fins → ${FIN_LINE[you.load.fin + 1]?.name ?? 'max'}`, FIN_LINE[you.load.fin + 1]?.tier ?? 1, FIN_LINE[you.load.fin + 1]?.cost ?? 0, false))
-    blocks.push(row('tail', 'next', `Tail → ${TAIL_LINE[you.load.tail + 1]?.name ?? 'max'}`, TAIL_LINE[you.load.tail + 1]?.tier ?? 1, TAIL_LINE[you.load.tail + 1]?.cost ?? 0, false))
-    blocks.push(row('lungs', 'next', 'Next lungs', you.load.lungs >= 1 ? 5 : 2, 6, false))
-    blocks.push(row('legs', 'next', 'Next legs', 2, 8, false))
-    blocks.push(row('wings', 'next', `Wing pairs ${you.load.wings}`, 5, 16, false))
-    blocks.push(row('arms', 'next', `Arms ${you.load.arms}`, 5, 16, false))
-    blocks.push('<h3>Feet</h3>')
-    for (const j of FEET) blocks.push(row('feet', j.id, j.name, j.tier, j.cost, you.load.feet === j.id))
-    blocks.push('<h3>Wing style</h3>')
-    for (const j of WING_STYLES) blocks.push(row('wingStyle', j.id, j.name, j.tier, j.cost, you.load.wingStyle === j.id))
-    blocks.push('<h3>Arm type</h3>')
-    for (const j of ARM_TYPES) blocks.push(row('armType', j.id, j.name, j.tier, j.cost, you.load.armType === j.id))
-    blocks.push('<h3>Breakers · tier 4</h3>')
-    for (const j of BREAKERS) blocks.push(row('breaker', j.id, j.name, j.tier, j.cost, you.load.breaker === j.id))
-    blocks.push('<h3>Cutters · tier 4</h3>')
-    for (const j of CUTTERS) blocks.push(row('cutter', j.id, j.name, j.tier, j.cost, you.load.cutter === j.id))
-    blocks.push('<h3>Shallows</h3>')
-    for (const id of ['camo', 'lure', 'spines', 'ink', 'barbels']) blocks.push(row(id, id, id, 1, 5, false))
-    blocks.push('<h3>Colors</h3>')
-    blocks.push(COLOR_NAMES.map((name, i) => row('accent', String(i), `Accent ${name}`, 1, 0, you.load.accent === i)).join(''))
-    blocks.push('<h3>Final gems · tier 10</h3>')
-    for (const g of GEMS) blocks.push(row('spec', g.id, `${g.name} (${you.gems[g.id] ?? 0}/${g.need})`, 10, 40, you.load.spec === g.id))
-    root.innerHTML = blocks.join('')
-    root.querySelectorAll('button').forEach((btn) =>
-      btn.addEventListener('click', () => {
-        const kind = (btn as HTMLButtonElement).dataset.kind ?? ''
-        const id = (btn as HTMLButtonElement).dataset.id ?? ''
-        if (kind === 'tab') {
-          this.evoTab = (id as 'parts' | 'skin') || 'parts'
-          this.renderEvo()
-          return
-        }
-        const result = tryPurchase(you, kind, id)
-        this.world.banner = result.reason
-        this.world.bannerT = 2
-        if (result.ok) this.feel('evolve')
-        else audio.blip('hurt')
-        this.keysigs.delete(you.id)
-        this.renderEvo()
-        this.save()
-      }),
-    )
+    this.paintPreview()
+    this.markFocus()
   }
 
   private renderBuild(): void {
@@ -1372,12 +1478,19 @@ export class Game {
     if (!this.playing) return
     const you = playerOf(this.world)
     const inWater = you.region === 'sea' || you.y < 5.8
-    const dig = document.getElementById('t-act')
+    const show = this.phoneLayout() && (!this.padOn || this.touchForced)
+    for (const id of ['t-act', 't-dash', 't-horn', 't-build', 't-bite', 't-evo', 't-settings', 't-map']) {
+      const el = document.getElementById(id)
+      if (el) el.hidden = true
+    }
     const rise = document.getElementById('t-up')
     const dive = document.getElementById('t-dive')
-    if (dig) dig.hidden = !canDig(you.load, you.spent)
-    if (rise) rise.hidden = false
-    if (dive) dive.hidden = !inWater
+    const sel = document.getElementById('t-select')
+    const pause = document.getElementById('t-pause')
+    if (rise) rise.hidden = !show
+    if (dive) dive.hidden = !show || !inWater
+    if (sel) sel.hidden = !show
+    if (pause) pause.hidden = !show
   }
 
   private revealTouch(): void {
@@ -1390,9 +1503,9 @@ export class Game {
     const pick = (ids: string[]) => ids.map((id) => document.getElementById(id)).filter((el): el is HTMLElement => !!el && !el.hidden)
     if (this.padHelpOpen) return pick(['pad-help-close'])
     if (this.quitOpen) return pick(['quit-save', 'quit-quit', 'quit-cancel'])
-    if (this.pauseOpen) return pick(['pause-resume', 'pause-save', 'pause-load', 'pause-pad', 'settings-close', 'set-sens', 'set-invert', 'set-vol', 'set-mute', 'set-quality', 'set-restart'])
+    if (this.pauseOpen) return pick(['pause-resume', 'pause-save', 'pause-load', 'pause-map', 'pause-eye', 'pause-pad', 'pause-quit', 'settings-close', 'set-sens', 'set-invert', 'set-vol', 'set-mute', 'set-quality', 'set-restart'])
     if (this.evoOpen) {
-      const body = [...document.querySelectorAll('#evo-body button, #evo-close')].filter((el): el is HTMLElement => el instanceof HTMLElement && !el.hidden && !(el as HTMLButtonElement).disabled)
+      const body = [...document.querySelectorAll('#evo-body button, #evo-cats button, #evo-fish, #evo-octo, #evo-dig, #evo-close, #evo-prompt-yes, #evo-prompt-no')].filter((el): el is HTMLElement => el instanceof HTMLElement && !el.hidden && !(el as HTMLButtonElement).disabled)
       return body
     }
     if (this.selectOpen) return pick(['select-pause', 'select-evolve', 'select-quit'])
@@ -1508,15 +1621,13 @@ export class Game {
     }
     if (f.view && this.playing) {
       if (this.padHelpOpen) this.togglePadHelp(false)
-      const selectEl = document.getElementById('select')
-      const selectVisible = this.selectOpen && !this.pauseOpen && !this.quitOpen && !this.evoOpen && !!selectEl && !selectEl.hidden
-      if (selectVisible) this.toggleSelect(false)
+      if (this.evoOpen) this.toggleEvo(false)
       else {
         if (this.pauseOpen) this.togglePause(false)
-        if (this.evoOpen) this.toggleEvo(false)
+        if (this.selectOpen) this.toggleSelect(false)
         if (this.quitOpen) this.toggleQuit(false)
         if (this.mapOpen) this.toggleMap(false)
-        this.toggleSelect(true)
+        this.toggleEvo(true)
       }
       return
     }
@@ -1651,6 +1762,7 @@ export class Game {
         else dig = true
       }
     }
+    if (this.digPulse > 0) dig = true
     if (this.buildMode && (this.actHeld || k.has('f'))) this.pickupPiece()
     if (!backKey && camForward > -0.2 && !this.buildMode) {
       const prey = nearestInCone(this.world, you)
@@ -1665,7 +1777,7 @@ export class Game {
       let turn = want - you.yaw
       while (turn > Math.PI) turn -= Math.PI * 2
       while (turn < -Math.PI) turn += Math.PI * 2
-      you.yaw += turn * Math.min(1, dt * 8)
+      you.yaw += turn * Math.min(1, dt * 8 * agility(morphOf(you.load)).turn)
       if (this.lookDragT <= 0) this.yawT += ((want - this.yaw + Math.PI * 3) % (Math.PI * 2) - Math.PI) * 0.08
     } else if (Math.hypot(camForward, camStrafe) > 0.15) {
       const wish = Math.atan2(
@@ -1675,7 +1787,7 @@ export class Game {
       let turn = wish - you.yaw
       while (turn > Math.PI) turn -= Math.PI * 2
       while (turn < -Math.PI) turn += Math.PI * 2
-      you.yaw += turn * Math.min(1, dt * 8)
+      you.yaw += turn * Math.min(1, dt * 8 * agility(morphOf(you.load)).turn)
       moveF = Math.min(1, Math.hypot(camForward, camStrafe))
       moveS = 0
     }
@@ -1734,6 +1846,7 @@ export class Game {
     }
     this.waterU.value = this.time
     if (this.lookDragT > 0) this.lookDragT = Math.max(0, this.lookDragT - dt)
+    if (this.digPulse > 0) this.digPulse = Math.max(0, this.digPulse - dt)
     this.easeLook(dt)
     this.pollPad(dt)
     if (this.playing) {
@@ -1758,6 +1871,7 @@ export class Game {
           this.burst(e.x, e.y, e.t === 'hit' ? 0xffe6a0 : 0xc4b59a, e.text)
           if (e.t === 'hit') this.flashHit(e.x, e.y)
         }
+        if (e.t === 'heal') this.burst(e.x, e.y, 0x5dff6a, e.text)
         if (e.t === 'eat') {
           this.burst(e.x, e.y, 0xf0e0a8, e.text)
           this.world.hitStop = Math.max(this.world.hitStop, 0.055)
@@ -1981,10 +2095,106 @@ export class Game {
     })
   }
 
+  private instancedPrey(e: Ent): boolean {
+    return e.kind === 'npc' || e.kind === 'guard'
+  }
+
+  private ensurePreyInst(species: string, cap: number): THREE.InstancedMesh {
+    let mesh = this.preyInst.get(species)
+    if (mesh && mesh.count <= cap && mesh.userData.cap >= cap) return mesh
+    mesh?.removeFromParent()
+    const geo = preyInstanceGeo(species)
+    const mat = new THREE.MeshStandardMaterial({
+      color: PREY_TINT[species] ?? 0xc4a090,
+      roughness: 0.62,
+      metalness: 0.02,
+    })
+    mesh = new THREE.InstancedMesh(geo, mat, cap)
+    mesh.frustumCulled = false
+    mesh.userData.cap = cap
+    this.scene.add(mesh)
+    this.preyInst.set(species, mesh)
+    return mesh
+  }
+
+  private syncPreyInstances(you: Ent): void {
+    const buckets = new Map<string, Ent[]>()
+    const range = 52
+    for (const e of this.world.ents) {
+      if (!e.alive || !this.instancedPrey(e)) continue
+      if (Math.abs(e.x - you.x) + Math.abs(e.z - you.z) > range) {
+        this.meshes.get(e.id)?.removeFromParent()
+        this.meshes.delete(e.id)
+        continue
+      }
+      this.meshes.get(e.id)?.removeFromParent()
+      this.meshes.delete(e.id)
+      const list = buckets.get(e.species) ?? []
+      list.push(e)
+      buckets.set(e.species, list)
+    }
+    const seen = new Set(buckets.keys())
+    for (const [species, list] of buckets) {
+      const mesh = this.ensurePreyInst(species, Math.max(list.length, 8))
+      const dummy = new THREE.Object3D()
+      list.forEach((e, i) => {
+        dummy.position.set(e.x, e.y, e.z)
+        dummy.rotation.set(0, -e.yaw, 0)
+        const s = Math.max(0.45, e.load.size || 0.5)
+        dummy.scale.setScalar(s)
+        dummy.updateMatrix()
+        mesh.setMatrixAt(i, dummy.matrix)
+      })
+      mesh.count = list.length
+      mesh.instanceMatrix.needsUpdate = true
+      mesh.visible = true
+    }
+    for (const [species, mesh] of this.preyInst) {
+      if (!seen.has(species)) {
+        mesh.count = 0
+        mesh.visible = false
+      }
+    }
+  }
+
+  private syncHealPlants(you: Ent): void {
+    const ready = (this.world.plants ?? []).filter((p) => p.ready && Math.abs(p.x - you.x) + Math.abs(p.z - you.z) < 60)
+    const cap = Math.max(ready.length, 8)
+    if (!this.healInst || (this.healInst.userData.cap ?? 0) < cap) {
+      this.healInst?.removeFromParent()
+      const geo = new THREE.ConeGeometry(0.18, 0.55, 5)
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x3dff6a,
+        emissive: 0x145a28,
+        emissiveIntensity: 0.7,
+        roughness: 0.45,
+        side: THREE.DoubleSide,
+      })
+      this.healInst = new THREE.InstancedMesh(geo, mat, cap)
+      this.healInst.frustumCulled = false
+      this.healInst.userData.cap = cap
+      this.scene.add(this.healInst)
+    }
+    const dummy = new THREE.Object3D()
+    ready.forEach((p, i) => {
+      dummy.position.set(p.x, p.y + 0.15, p.z)
+      dummy.rotation.set(0, i * 0.7, 0)
+      dummy.scale.set(p.kind === 'berry' ? 1.15 : 1, p.kind === 'berry' ? 0.9 : 1, p.kind === 'berry' ? 1.15 : 1)
+      dummy.updateMatrix()
+      this.healInst!.setMatrixAt(i, dummy.matrix)
+    })
+    this.healInst.count = ready.length
+    this.healInst.instanceMatrix.needsUpdate = true
+  }
+
   private sync(): void {
     this.syncTouchButtons()
+    const you = playerOf(this.world)
+    this.syncPreyInstances(you)
+    this.syncHealPlants(you)
     const seen = new Set<number>()
     for (const e of this.world.ents) {
+      if (e.kind !== 'player' && this.instancedPrey(e)) continue
       if (!e.alive && e.kind !== 'player') {
         this.meshes.get(e.id)?.removeFromParent()
         continue
@@ -2016,6 +2226,7 @@ export class Game {
       group.userData.yaw = e.yaw
       group.position.set(e.x, y, e.z)
       group.visible = true
+      group.userData.landWalk = e.kind === 'player' && e.region !== 'sea' && !!morphFx(morphOf(e.load)).landMove
       poseCreature(group, this.time + e.salt, Math.abs(e.vx) + Math.abs(e.vy) > 0.25, e.biteT > 0 || e.tele > 0 ? 1 : 0, e.facing)
       if (e.tele > 0) {
         group.userData.teleGlow = true
@@ -2050,28 +2261,34 @@ export class Game {
   private paintPreview(): void {
     const canvas = document.getElementById('evo-preview') as HTMLCanvasElement | null
     if (!canvas || !this.evoOpen) return
+    const w = Math.max(320, canvas.clientWidth || 720)
+    const h = Math.max(180, canvas.clientHeight || 420)
     if (!this.preview) {
       this.preview = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
-      this.preview.setSize(320, 180, false)
       this.preview.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
       this.preview.outputColorSpace = THREE.SRGBColorSpace
       this.previewScene = new THREE.Scene()
       this.previewScene.background = new THREE.Color(0x143840)
-      this.previewScene.add(new THREE.HemisphereLight(0xffe2c4, 0x1a4450, 1.1))
-      const sun = new THREE.DirectionalLight(0xfff1d0, 1.2)
-      sun.position.set(2, 3, 4)
+      this.previewScene.add(new THREE.HemisphereLight(0xffe8c8, 0x163a44, 1.25))
+      const sun = new THREE.DirectionalLight(0xfff3d8, 1.45)
+      sun.position.set(2.2, 3.2, 4)
       this.previewScene.add(sun)
+      const fill = new THREE.DirectionalLight(0x8ad0e8, 0.55)
+      fill.position.set(-3, 1.2, -2)
+      this.previewScene.add(fill)
     }
+    this.preview.setSize(w, h, false)
     const you = playerOf(this.world)
     const fish = buildCreature(you.load, you.spent, 'player', you.species)
-    fish.rotation.y = 0.55
+    fish.rotation.y = 0.55 + (this.time % 20) * 0.02
     const bar = fish.getObjectByName('hp')
     if (bar) bar.visible = false
     this.previewScene?.children.filter((c) => c.type === 'Group').forEach((c) => c.removeFromParent())
     this.previewScene?.add(fish)
-    const cam = new THREE.PerspectiveCamera(32, 320 / 180, 0.05, 20)
-    cam.position.set(1.8, 0.42, 2.5)
-    cam.lookAt(0, 0, 0)
+    // Fixed camera so part changes don't jump the frame.
+    const cam = new THREE.PerspectiveCamera(32, w / h, 0.05, 20)
+    cam.position.set(2.15, 0.55, 2.7)
+    cam.lookAt(0, 0.05, 0)
     this.preview?.render(this.previewScene!, cam)
   }
 

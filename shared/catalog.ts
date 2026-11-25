@@ -1,5 +1,7 @@
 /** Data tables for EVO 2.0. Stats and gates live in rules.ts. */
 
+import type { Morph } from './evolve'
+
 export interface Loadout {
   jaw: string
   teeth: string
@@ -28,6 +30,7 @@ export interface Loadout {
   barbels: number
   /** 1–20 hide line, separate from evolution tier. */
   skin: number
+  morph?: Morph
 }
 
 export interface Pick {
@@ -415,6 +418,13 @@ export interface Tree {
 export const TREES: Tree[] = [
   { id: 'oak', name: 'Oak', cls: 'med', biome: 'land', burn: 0.6, float: 0.4 },
   { id: 'pine', name: 'Pine', cls: 'med', biome: 'land', burn: 0.8, float: 0.5 },
+  { id: 'fir', name: 'Fir', cls: 'med', biome: 'land', burn: 0.75, float: 0.5 },
+  { id: 'spruce', name: 'Spruce', cls: 'med', biome: 'land', burn: 0.75, float: 0.48 },
+  { id: 'maple', name: 'Maple', cls: 'med', biome: 'land', burn: 0.65, float: 0.4 },
+  { id: 'aspen', name: 'Aspen', cls: 'soft', biome: 'land', burn: 0.75, float: 0.5 },
+  { id: 'cottonwood', name: 'Cottonwood', cls: 'soft', biome: 'land', burn: 0.7, float: 0.55 },
+  { id: 'snag', name: 'Dead snag', cls: 'hard', biome: 'land', burn: 0.2, float: 0.2 },
+  { id: 'horsetail', name: 'Giant horsetail', cls: 'soft', biome: 'land', burn: 0.9, float: 0.35 },
   { id: 'birch', name: 'Birch', cls: 'soft', biome: 'land', burn: 0.7, float: 0.45 },
   { id: 'redwood', name: 'Redwood', cls: 'hard', biome: 'land', burn: 0.4, float: 0.35 },
   { id: 'palm', name: 'Palm', cls: 'soft', biome: 'land', burn: 0.75, float: 0.7 },
@@ -597,6 +607,13 @@ export const ROCK_TINT: Record<string, number> = {
 export const TREE_TINT: Record<string, number> = {
   oak: 0x6a4a28,
   pine: 0x3d5c3a,
+  fir: 0x2a4a30,
+  spruce: 0x245038,
+  maple: 0xb24a22,
+  aspen: 0xc8d45a,
+  cottonwood: 0xc8d8a0,
+  snag: 0x6a6860,
+  horsetail: 0x4a7a48,
   birch: 0xe8dcc0,
   redwood: 0x8a3a28,
   palm: 0x8a7a3a,

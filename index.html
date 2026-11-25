@@ -33,8 +33,8 @@
       <p id="title-msg"></p>
       <div class="help" id="title-help">
         <p><strong>Keyboard:</strong> WASD move · mouse drag or right-drag orbits, scroll zooms · click bites · Shift sprint · Space jump · C dive · F dig · B build · Tab lock · E evolve · Q dash · Esc menu. In build, Q/E rotate and Esc or B leave (E does not evolve, Q does not dash)</p>
-        <p><strong>Touch:</strong> Left stick moves · two-finger or right-side drag orbits · Attack bites · Evolve opens parts · Build opens place mode</p>
-        <p><strong>Controller:</strong> LS move · RS orbit · RT bite · LT boost · A jump · B dash (leaves build, no dash) · X dig · Y build · D-pad Left evolve · D-pad U/D rise/dive, rotate in build · D-pad Right lock · LB horn · RB dive · LB/RB cycle pieces in build · L3 sprint · R3 lock · Start pause · View Select. In menus: D-pad or LS move, A confirm, B back</p>
+        <p><strong>Touch:</strong> Left stick moves · one-finger drag on empty screen orbits the camera · Select opens Evolve · Pause · Rise / Dive. Auto-bite on contact. Dig is inside the Evolve menu.</p>
+        <p><strong>Controller:</strong> LS move · RS orbit · RT bite · LT boost · A jump · B dash (leaves build, no dash) · X dig · Y build · D-pad Left evolve · D-pad U/D rise/dive, rotate in build · D-pad Right lock · LB horn · RB dive · LB/RB cycle pieces in build · L3 sprint · R3 lock · Start pause · View Evolve. In menus: D-pad or LS move, A confirm, B back</p>
       </div>
     </div>
     <div id="rotate">
@@ -45,26 +45,40 @@
       <span id="hp"></span>
       <span id="tier"></span>
       <span id="ep"></span>
-      <div id="corner">
-        <button id="t-map" type="button" aria-label="Map">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M4 6l5-2 6 2 5-2v14l-5 2-6-2-5 2z"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>
-        </button>
-        <button id="view" type="button">Eye</button>
-        <button id="t-settings" type="button" aria-label="Menu">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm8.2 3.1-1.7-.3a6.6 6.6 0 0 0-.5-1.2l1-1.4a.8.8 0 0 0-.1-.9l-1.2-1.2a.8.8 0 0 0-.9-.1l-1.4 1a6.6 6.6 0 0 0-1.2-.5L13.9 4.3a.8.8 0 0 0-.7-.6h-1.6a.8.8 0 0 0-.7.6l-.3 1.7a6.6 6.6 0 0 0-1.2.5l-1.4-1a.8.8 0 0 0-.9.1L5.9 6.8a.8.8 0 0 0-.1.9l1 1.4a6.6 6.6 0 0 0-.5 1.2l-1.7.3a.8.8 0 0 0-.6.7v1.6c0 .4.3.7.6.7l1.7.3c.1.4.3.8.5 1.2l-1 1.4a.8.8 0 0 0 .1.9l1.2 1.2c.3.3.7.3.9.1l1.4-1c.4.2.8.4 1.2.5l.3 1.7c.1.4.4.6.7.6h1.6c.4 0 .7-.3.7-.6l.3-1.7c.4-.1.8-.3 1.2-.5l1.4 1c.3.2.7.2.9-.1l1.2-1.2c.3-.3.3-.7.1-.9l-1-1.4c.2-.4.4-.8.5-1.2l1.7-.3c.4-.1.6-.4.6-.7v-1.6a.8.8 0 0 0-.6-.7z"/></svg>
-        </button>
-        <button id="t-evo" type="button" aria-label="Evolve">Evolve</button>
-      </div>
+      <div id="corner" hidden></div>
       <p id="goal"></p>
-      <button id="grow" type="button">Grow</button>
+      <button id="grow" type="button" hidden>Grow</button>
       <p id="banner"></p>
       <p id="lock-tag" hidden></p>
       <p id="hint" hidden></p>
     </div>
-    <div id="evo" class="panel" hidden>
-      <header><h2>Evolve</h2><span id="evo-ep"></span><button id="evo-close" type="button">Close</button></header>
-      <canvas id="evo-preview" width="320" height="180"></canvas>
+    <div id="evo" class="panel evo-sheet" hidden>
+      <header class="evo-top">
+        <div class="evo-top-main">
+          <h2>Evolve</h2>
+          <span id="evo-ep"></span>
+          <span id="evo-branch"></span>
+        </div>
+        <div class="evo-top-actions">
+          <button id="evo-fish" type="button">Fish</button>
+          <button id="evo-octo" type="button">Octopus</button>
+          <button id="evo-dig" type="button">Dig</button>
+          <button id="evo-close" type="button">Close</button>
+        </div>
+      </header>
+      <div class="evo-stage">
+        <canvas id="evo-preview" width="720" height="420"></canvas>
+        <aside id="evo-stats"></aside>
+      </div>
+      <nav id="evo-cats"></nav>
       <div id="evo-body"></div>
+      <div id="evo-prompt" class="evo-prompt" hidden>
+        <p id="evo-prompt-text"></p>
+        <div class="evo-prompt-actions">
+          <button id="evo-prompt-yes" type="button">Swap</button>
+          <button id="evo-prompt-no" type="button">Cancel</button>
+        </div>
+      </div>
     </div>
     <div id="build" class="panel" hidden>
       <header><h2>Build</h2><button id="build-close" type="button">Close</button></header>
@@ -77,7 +91,7 @@
     </div>
         <p id="pad-prompt" hidden>Controller connected</p>
     <div id="pad-map" hidden>
-      <span>LS move</span><span>RS look</span><span>RT bite</span><span>LT boost</span><span>A jump</span><span>B dash</span><span>X dig</span><span>Y build</span><span>D-left evolve</span><span>D-U/D rise · rotate in build</span><span>Start pause</span><span>View Select</span>
+      <span>LS move</span><span>RS look</span><span>RT bite</span><span>LT boost</span><span>A jump</span><span>B dash</span><span>X dig</span><span>Y build</span><span>D-left evolve</span><span>D-U/D rise · rotate in build</span><span>Start pause</span><span>View Evolve</span>
     </div>
     <div id="build-tray" hidden>
       <p id="build-status"></p>
@@ -105,13 +119,16 @@
         <button id="pause-resume" type="button">Resume</button>
         <button id="pause-save" type="button">Save</button>
         <button id="pause-load" type="button">Load</button>
+        <button id="pause-map" type="button">Map</button>
+        <button id="pause-eye" type="button">Eye</button>
         <button id="pause-pad" type="button">Controller</button>
+        <button id="pause-quit" type="button">Quit</button>
       </div>
       <p class="path">Guppy → Steelhead (12 EP) → Sturgeon (18 EP). Defeat creatures to earn EP.</p>
       <div class="help guide">
         <p><strong>Keyboard:</strong> WASD move · mouse drag or right-drag orbits, scroll zooms · click bites · Shift sprint · Space jump · C dive · F dig · B build · Tab lock · E evolve · Q dash · Esc closes build or menus first, then Select. In build, Q/E rotate. Mute is in this menu.</p>
-        <p><strong>Touch:</strong> Left stick moves · two-finger or right-side drag orbits · Attack bites · Evolve opens parts · Build opens place mode</p>
-        <p><strong>Controller:</strong> LS move · RS orbit · RT bite · LT boost · A jump · B dash (leaves build, no dash) · X dig · Y build · D-pad Left evolve · D-pad U/D rise/dive, rotate in build · D-pad Right lock · LB horn · RB dive · LB/RB cycle pieces in build · L3 sprint · R3 lock · Start pause · View Select. In menus: D-pad or LS move, A confirm, B back</p>
+        <p><strong>Touch:</strong> Left stick moves · one-finger drag on empty screen orbits the camera · Select opens Evolve · Pause · Rise / Dive. Auto-bite on contact. Dig is inside the Evolve menu.</p>
+        <p><strong>Controller:</strong> LS move · RS orbit · RT bite · LT boost · A jump · B dash (leaves build, no dash) · X dig · Y build · D-pad Left evolve · D-pad U/D rise/dive, rotate in build · D-pad Right lock · LB horn · RB dive · LB/RB cycle pieces in build · L3 sprint · R3 lock · Start pause · View Evolve. In menus: D-pad or LS move, A confirm, B back</p>
       </div>
       <label>Look sensitivity <input id="set-sens" type="range" min="0.2" max="2" step="0.1" value="0.5" /></label>
       <label class="check"><input id="set-invert" type="checkbox" /> Invert Y</label>
@@ -146,7 +163,7 @@
         <li>RB — dive; cycle pieces in build</li>
         <li>L3 — sprint · R3 — lock on</li>
         <li>Start — pause</li>
-        <li>View — Select</li>
+        <li>View — Evolve</li>
         <li>In menus: D-pad or left stick to move, A to confirm, B to back</li>
       </ul>
     </div>
@@ -158,37 +175,23 @@
     <div id="look" hidden></div>
     <div id="touch" hidden>
       <div id="stick" class="stick"><div id="knob"></div></div>
-      <div id="arc">
+            <div id="arc">
         <div class="arc-row">
           <button id="t-up" class="orb word" type="button" aria-label="Rise"><span class="lbl">Rise</span></button>
           <button id="t-dive" class="orb word" type="button" aria-label="Dive"><span class="lbl">Dive</span></button>
         </div>
         <div class="arc-row">
-          <button id="t-horn" class="orb" type="button" aria-label="Tail or horn">
-            <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5"></circle></svg>
-            <svg class="ico" viewBox="0 0 24 24"><path d="M5 18c4-1 6-6 7-14 3 6 6 9 9 10-4 1-8 1-12 4z" fill="currentColor"/></svg>
-          </button>
-          <button id="t-build" class="orb" type="button" aria-label="Build">
-            <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5"></circle></svg>
-            <svg class="ico" viewBox="0 0 24 24"><path d="M4 20V10l8-6 8 6v10H4z" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-          </button>
+          <button id="t-select" class="orb word" type="button" aria-label="Select"><span class="lbl">Select</span></button>
+          <button id="t-pause" class="orb word" type="button" aria-label="Pause"><span class="lbl">Pause</span></button>
         </div>
-        <div class="arc-row arc-main">
-          <button id="t-act" class="orb" type="button" aria-label="Dig">
-            <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5"></circle></svg>
-            <svg class="ico" viewBox="0 0 24 24"><path d="M4 18h16M7 18V9l5-4 5 4v9" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-            <span id="t-act-lbl">Dig</span>
-          </button>
-          <button id="t-dash" class="orb" type="button" aria-label="Dash">
-            <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5"></circle></svg>
-            <svg class="ico" viewBox="0 0 24 24"><path d="M4 12h10M12 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-          </button>
-          <button id="t-bite" class="primary" type="button" aria-label="Attack">
-            <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5"></circle></svg>
-            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19 L9 4 M10 19 L15 4 M16 19 L21 4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
-            <span class="lbl">Attack</span>
-          </button>
-        </div>
+        <button id="t-horn" class="orb" type="button" hidden aria-hidden="true"></button>
+        <button id="t-build" class="orb" type="button" hidden aria-hidden="true"></button>
+        <button id="t-act" class="orb" type="button" hidden aria-hidden="true"></button>
+        <button id="t-dash" class="orb" type="button" hidden aria-hidden="true"></button>
+        <button id="t-bite" class="primary" type="button" hidden aria-hidden="true"></button>
+        <button id="t-evo" type="button" hidden aria-hidden="true"></button>
+        <button id="t-settings" type="button" hidden aria-hidden="true"></button>
+        <button id="t-map" type="button" hidden aria-hidden="true"></button>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

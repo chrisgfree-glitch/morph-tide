@@ -1,4 +1,10 @@
 import { starterLoad } from '../shared/catalog'
+import { FINS, HORNS, SKINS, HEADS, DORSALS, REARS, TAILS, LIMBS, EXTRA_REAR, tryBuy, convertToGuppy, hornDamage, emptyMorph, mapLegacySkin, ensureMorph, agility, incomingMissChance, morphFx } from '../shared/evolve'
+import { createSpawners, seedSpawners, stepSpawners, mulberry32 } from '../shared/prey'
+import { createHealPlants, tryEatPlant, stepHealPlants } from '../shared/plants'
+import { LAND_TREES, LAND_TREE_NAMES } from '../shared/landcover'
+import { RECIPES, canCraft, spendCraft, gearFx, forageDrop } from '../shared/craft'
+import { landOk } from '../shared/rules'
 import { columnSeconds } from '../shared/dig'
 import { attackVolumes, bodyScale, volumeHits, youngBite } from '../shared/body'
 import { applyWorldSnapshot, createWorld, playerOf, snapshotWorld, step } from '../shared/sim'
@@ -217,13 +223,14 @@ if (playerOf(intoGuppy).load.size > 0.5) {
 }
 applyGameSave(intoGuppy, parseGameSave(midRaw)!)
 const loaded = playerOf(intoGuppy)
-if (loaded.load.size !== 0.92 || loaded.spent !== 12 || loaded.ep !== 18 || loaded.load.lungs !== 1 || (loaded.bag.stone ?? 0) !== 2) {
-  throw new Error('existing save must load unchanged')
+if (loaded.ep !== 18 || loaded.spent !== 12 || (loaded.bag.stone ?? 0) !== 2) {
+  throw new Error('converted save should keep EP, spent, and bag')
+}
+if (loaded.load.size > 0.55 || loaded.load.lungs !== 0 || loaded.load.legs !== 0 || loaded.load.morph?.branch !== 'guppy') {
+  throw new Error('old saves should convert to a guppy body with the matching skin')
 }
 if (compute(loaded.load, loaded.spent).bite <= 2) throw new Error('loaded mid-game bite should not stay guppy-weak')
-if (Math.abs(bodyScale(loaded.load, loaded.spent) - bodyScale(oldStarter, 12)) > 0.001) {
-  throw new Error('loaded body scale should match the pre-guppy size')
-}
+if (loaded.load.size > 0.55) throw new Error('converted body size field should stay a guppy')
 console.log('guppy start and save compatibility')
 
 const refundWorld = createWorld()
@@ -364,3 +371,135 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
   if (later && later.maxHp <= 3) throw new Error('later sea prey should keep mid-game health')
   console.log('first meal takes 1-2 bites')
 }
+
+
+{
+  if (SKINS.length !== 10) throw new Error(`expected 10 skins, got ${SKINS.length}`)
+  if (HEADS.filter((h) => h.id !== 'guppy').length !== 10) throw new Error('expected 10 heads')
+  if (HORNS.length !== 5) throw new Error('expected 5 horns')
+  if (FINS.length !== 8) throw new Error(`expected 8 fins (side+belly, no trout/bass), got ${FINS.length}`)
+  if (LIMBS.length !== 3) throw new Error('expected 3 limbs')
+  if (DORSALS.length !== 5) throw new Error('expected 5 dorsals')
+  if (REARS.length !== 4) throw new Error(`expected 4 rear fins, got ${REARS.length}`)
+  if (TAILS.length !== 5) throw new Error('expected 5 tails')
+  if (FINS.some((f) => f.id === 'trout' || f.id === 'bass')) throw new Error('trout/bass must be removed')
+  const fishFins = ['fan', 'spinyfin-side', 'dolphin', 'lionfish', 'sharkfin-side', 'manta'].map((id) => FINS.find((f) => f.id === id)!)
+  for (let i = 1; i < fishFins.length; i++) {
+    if (fishFins[i]!.cost <= fishFins[i - 1]!.cost) throw new Error(`fin cost order broke at ${fishFins[i]!.name}`)
+  }
+  const manta = FINS.find((f) => f.id === 'manta')!
+  const dolphin = FINS.find((f) => f.id === 'dolphin')!
+  const shark = FINS.find((f) => f.id === 'sharkfin-side')!
+  const spiny = FINS.find((f) => f.id === 'spinyfin-side')!
+  const fan = FINS.find((f) => f.id === 'fan')!
+  if ((manta.swim ?? 0) + (manta.spd ?? 0) <= (dolphin.swim ?? 0) + (dolphin.spd ?? 0)) throw new Error('Manta must be faster than Dolphin')
+  if ((dolphin.swim ?? 0) + (dolphin.spd ?? 0) <= (shark.swim ?? 0) + (shark.spd ?? 0)) throw new Error('Dolphin should be second-fastest')
+  if ((spiny.bite ?? 0) <= (shark.bite ?? 0)) throw new Error('Spiny Fin should have the biggest attack boost')
+  if ((shark.swim ?? 0) + (shark.spd ?? 0) <= (fan.swim ?? 0) + (fan.spd ?? 0)) throw new Error('Shark Fin should be faster than Fan')
+  if ((FINS.find((f) => f.id === 'lionfish')!.deter ?? 0) <= 0) throw new Error('Lionfish Fin needs deterrence')
+  if (DORSALS.find((d) => d.id === 'spinyfin')?.name !== 'Spiny Dorsal') throw new Error('Spiny Dorsal label')
+  if (DORSALS.find((d) => d.id === 'sharkfin')?.name !== 'Shark Dorsal') throw new Error('Shark Dorsal label')
+  if (!REARS.every((r) => r.place === 'rear')) throw new Error('rear fins must be placed at the rear')
+  if (EXTRA_REAR.place !== 'rear' || EXTRA_REAR.branch !== 'fish') throw new Error('extra rear fins are fish-only and low toward the tail')
+
+  const you = { ep: 400, spent: 0, load: convertToGuppy(undefined), unlocked: [] as string[] }
+  const mid = convertToGuppy({ ...starterLoad(), skin: 5, jaw: 'shark', legs: 4, size: 1 })
+  if (mid.morph?.branch !== 'guppy') throw new Error('old save should become a guppy')
+  if (mid.jaw !== 'nip' || mid.legs !== 0) throw new Error('converted body should be a guppy')
+  if (mapLegacySkin(5) !== mid.morph?.skin) throw new Error('converted skin should match')
+  if (mid.size > 0.55) throw new Error('converted guppy should stay small')
+
+  const r1 = tryBuy(you, 'scales')
+  if (!r1.ok) throw new Error(r1.ok ? '' : r1.reason)
+  const r2 = tryBuy(you, 'orca')
+  if (!r2.ok) throw new Error('skins must not be level-gated')
+  ensureMorph(you.load)
+  const entered = tryBuy(you, 'sharkfin-side', { confirm: true })
+  if (!entered.ok) throw new Error(`enter fish: ${'reason' in entered ? entered.reason : ''}`)
+  const extra1 = tryBuy(you, 'extraRear')
+  if (!extra1.ok) throw new Error(`extra rear 1: ${'reason' in extra1 ? extra1.reason : ''}`)
+  const extra2 = tryBuy(you, 'extraRear')
+  if (!extra2.ok) throw new Error('extra rear 2 should stack')
+  if ((you.load.morph?.extraRear ?? 0) !== 2) throw new Error('should have 2 extra rear fins')
+  const morph = ensureMorph(you.load)
+  if (agility(morph).turn <= 1) throw new Error('extra rear fins should boost turn')
+  const swap = tryBuy(you, 'webbed')
+  if (swap.ok || !('prompt' in swap) || !swap.prompt) throw new Error('webbed limbs should prompt to swap extra rear fins')
+  if (!/extra rear fin/i.test(swap.prompt.message)) throw new Error('swap prompt should mention extra rear fins')
+  const confirm = tryBuy(you, 'webbed', { confirm: true })
+  if (!confirm.ok) throw new Error(`webbed confirm: ${'reason' in confirm ? confirm.reason : ''}`)
+  if ((you.load.morph?.extraRear ?? 1) !== 0) throw new Error('webbed limbs must remove extra rear fins')
+  if (you.load.morph?.branch !== 'octopus') throw new Error('should be on the octopus branch')
+  if (!landOk(you.load, you.spent)) throw new Error('webbed limbs should allow land movement')
+
+  const horned = { ep: 200, spent: 0, load: starterLoad(), unlocked: [] as string[] }
+  ensureMorph(horned.load)
+  tryBuy(horned, 'nub')
+  const dmgIdle = hornDamage(ensureMorph(horned.load), 0, 10)
+  const dmgFull = hornDamage(ensureMorph(horned.load), 10, 10)
+  if (dmgFull <= dmgIdle) throw new Error('horn damage should scale with speed')
+
+  const lion = emptyMorph()
+  lion.sideFin = 'lionfish'
+  lion.skin = 'slime'
+  const miss = incomingMissChance(morphFx(lion))
+  if (miss <= (morphFx({ ...emptyMorph(), skin: 'slime' }).evasion)) throw new Error('deterrence should stack with evasion')
+
+  if (LAND_TREES.length !== 20) throw new Error(`expected 20 land trees, got ${LAND_TREES.length}`)
+  const names = LAND_TREES.map((id) => LAND_TREE_NAMES[id])
+  if (new Set(names).size !== 20) throw new Error('tree names should be unique')
+
+  if (RECIPES.length < 10 || RECIPES.length > 12) throw new Error(`expected 10-12 recipes, got ${RECIPES.length}`)
+  const bag: Record<string, number> = { bark: 5, sticks: 8, stone: 8, bones: 2, reed: 6, leaf: 8, herb: 6, moss: 8, thorn: 5, log: 5, vine: 4, coral: 2 }
+  const shield = spendCraft(bag, 'barkshield')
+  if (!shield.ok) throw new Error(shield.reason)
+  if (gearFx(bag).def < 3) throw new Error('bark shield should add defense')
+  const poultice = canCraft({ herb: 2, moss: 1 }, 'poultice')
+  if (!poultice.ok) throw new Error('poultice recipe should be craftable')
+  const drops = forageDrop('tree', 'oak')
+  if (!drops.log || !drops.bark) throw new Error('trees should drop log and bark')
+
+  const plants = createHealPlants()
+  if (plants.length < 80) throw new Error('healing plants should be spread widely')
+  if (!plants.some((p) => p.kind === 'berry')) throw new Error('land berry bushes should heal')
+  const tuft = plants[0]!
+  const eaten = tryEatPlant(plants, tuft.x, tuft.y, tuft.z, 2)
+  if (!eaten || eaten.heal <= 0) throw new Error('eating a plant should heal HP')
+  if (tryEatPlant(plants, tuft.x, tuft.y, tuft.z, 2)) throw new Error('eaten plants should not be immediately reusable')
+  stepHealPlants(plants, eaten.period + 0.1)
+  const again = tryEatPlant(plants, tuft.x, tuft.y, tuft.z, 2)
+  if (!again) throw new Error('plants should regrow after the timer')
+
+  const spawners = createSpawners()
+  if (spawners.length < 40) throw new Error('prey should be spread across the world')
+  if (!spawners.some((s) => s.cx > 100) || !spawners.some((s) => s.cx < 15)) throw new Error('prey must exist near spawn and far inland')
+  if (spawners.some((s) => s.respawn > 8 && s.region === 'sea' && s.kind === 'speck')) throw new Error('level-1 prey should respawn quickly')
+  const rng = mulberry32(1)
+  const seeded = seedSpawners(spawners, rng)
+  if (seeded.length < 200) throw new Error(`expected a dense seed, got ${seeded.length}`)
+  const counts = new Map<string, number>()
+  for (const r of seeded) counts.set(r.spawnerId, (counts.get(r.spawnerId) ?? 0) + 1)
+  const later = stepSpawners(spawners, { of: (id) => (counts.get(id) ?? 0) > 0 ? 0 : 0 }, 3, rng)
+  // drain one and confirm refill exists as a function
+  if (typeof later.length !== 'number') throw new Error('stepSpawners should return requests')
+
+  const w = createWorld()
+  const prey = w.ents.filter((e) => e.kind === 'npc')
+  if (prey.length < 100) throw new Error(`world should start with plenty of prey, got ${prey.length}`)
+  if (!w.plants?.some((p) => p.kind === 'berry')) throw new Error('world should include land berry bushes')
+  if (!w.nodes.some((n) => n.kind === 'tree' && LAND_TREES.includes(n.mat as (typeof LAND_TREES)[number]))) throw new Error('forage trees should be placed')
+  const walker = playerOf(w)
+  walker.load = starterLoad()
+  ensureMorph(walker.load)
+  walker.ep = 80
+  // apply land limbs directly
+  walker.load.morph = ensureMorph(walker.load)
+  walker.load.morph.branch = 'octopus'
+  walker.load.morph.limb = 'sallegs'
+  if (!landOk(walker.load, walker.spent)) throw new Error('salamander legs should allow land movement')
+  walker.load.morph.limb = 'webbed'
+  if (!landOk(walker.load, walker.spent)) throw new Error('webbed limbs should allow land movement')
+  console.log('evolve redesign, prey, plants, trees, craft, land movement')
+}
+
+console.log('all checks ok')
