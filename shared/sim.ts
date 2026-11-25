@@ -926,7 +926,7 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
       ev.push({ t: 'hit', x: foe.x, y: foe.y, text: `${dmg}` })
       if (!foe.alive) rewardKill(w, you, foe, ev)
       else {
-        const bonus = 1 + (gearFx(you.bag).epBonus > 0 ? 1 : 0)
+        const bonus = (1 + (gearFx(you.bag).epBonus > 0 ? 1 : 0)) * 25
         you.ep += bonus
         ev.push({ t: 'eat', x: foe.x, y: foe.y, text: `+${bonus} EP` })
       }
@@ -1213,7 +1213,7 @@ export function nearestInCone(w: World, you: Ent): Ent | undefined {
 }
 
 function rewardKill(w: World, you: Ent, foe: Ent, ev: Evt[]): void {
-  const gain = 4 + Math.round(foe.bias / 4) + (foe.kind === 'boss' ? 40 : 0)
+  const gain = (4 + Math.round(foe.bias / 4) + (foe.kind === 'boss' ? 40 : 0)) * 25
   you.ep += gain
   you.load.size = Math.min(2.2, you.load.size + 0.03)
   const hide = HIDEfor(foe)
@@ -1234,7 +1234,7 @@ function HIDEfor(foe: Ent): string {
 }
 
 function autoEvolve(e: Ent): void {
-  if (e.kind === 'player' || e.ep < 6) return
+  if (e.kind === 'player' || e.ep < 150) return
   const options = ['fin', 'tail', 'jaw', 'teeth']
   const kind = options[e.id % options.length] ?? 'fin'
   const id = kind === 'jaw' ? 'needlejaw' : kind === 'teeth' ? 'needle' : 'next'
@@ -1360,7 +1360,7 @@ function npcThink(w: World, dt: number, ev: Evt[]): void {
             ev.push({ t: 'hit', x: target.x, y: target.y, text: `${dmg}` })
           }
           if (!target.alive && target.kind !== 'player') {
-            e.ep += 3 + e.bias / 10
+            e.ep += (3 + e.bias / 10) * 25
             autoEvolve(e)
           }
         }
@@ -1392,7 +1392,7 @@ function meats(w: World, you: Ent, ev: Evt[]): void {
     if (Math.abs(m.x - you.x) < 5) m.x += Math.sign(you.x - m.x) * 3 * 0.016
     if (Math.abs(m.x - you.x) < 1.2) {
       m.alive = false
-      you.ep += 2
+      you.ep += 50
       w.eats += 1
       ev.push({ t: 'eat', x: m.x, y: m.y, text: '+2 EP' })
     }
@@ -1454,7 +1454,7 @@ function raids(w: World, dt: number, ev: Evt[]): void {
       base.raidUntil = 0
       base.shield = w.time + SHIELD_SEC
       const owner = w.ents.find((e) => e.id === base.owner)
-      if (owner) owner.ep += 8 + base.wave * 2
+      if (owner) owner.ep += (8 + base.wave * 2) * 25
       bump(w.score.defenses, base.clan || owner?.name || 'den')
       ev.push({ t: 'held', x: base.x, y: 2, text: 'Defense held' })
     }

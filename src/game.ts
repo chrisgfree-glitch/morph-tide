@@ -949,7 +949,7 @@ export class Game {
     const hint = document.getElementById('hint')
     const touch = !document.getElementById('touch')?.hidden
     const you = playerOf(this.world)
-    const guppyStart = you.spent < 12 && you.load.legs === 0 && you.load.size <= 0.55
+    const guppyStart = you.spent < 300 && you.load.legs === 0 && you.load.size <= 0.55
     if (hint && guppyStart && !localStorage.getItem('evo2.hinted')) {
       hint.hidden = false
       hint.textContent = touch
@@ -2565,11 +2565,11 @@ function earlyGoal(w: World, you: Ent, fallback: string): string {
   }
   if (!boss?.alive) return w.gateOpen ? 'The Strand Colossus has fallen. Keep growing.' : 'The Strand Colossus has fallen'
   if (!canGoAshore(you.load) && you.x >= 58) {
-    return you.ep < 10
+    return you.ep < 250
       ? 'Earn 10 EP, then buy Lungs in Evolve (Select) to go ashore'
       : 'Buy Lungs in Evolve (Select) — or octopus land limbs — to go ashore'
   }
-  const guppy = you.spent < 12 && you.load.legs === 0 && you.load.size <= 0.55
+  const guppy = you.spent < 300 && you.load.legs === 0 && you.load.size <= 0.55
   if (guppy && w.eats < 5) return `Eat 5 fish (${w.eats}/5)`
   return fallback
 }

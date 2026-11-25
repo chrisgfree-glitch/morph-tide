@@ -18,7 +18,7 @@ import { trunkRadius } from '../shared/landcover'
 function t7() {
   const load = starterLoad()
   load.jaw = 'croc'
-  load.teeth = 'serrated'
+  load.teeth = 'sawrow'
   load.feet = 'claw'
   load.lungs = 2
   load.armor = 2
@@ -30,20 +30,20 @@ function t7() {
   return load
 }
 
-const full = columnSeconds(t7(), 180, 'full')
-const tube = columnSeconds(t7(), 180, 'tube')
-const vent = columnSeconds(t7(), 180, 'vent')
-const early = columnSeconds(t7(), 55, 'full')
+const full = columnSeconds(t7(), 4500, 'full')
+const tube = columnSeconds(t7(), 4500, 'tube')
+const vent = columnSeconds(t7(), 4500, 'vent')
+const early = columnSeconds(t7(), 1375, 'full')
 if (full === null || full > 180 || full < 20) throw new Error(`full column ${full}`)
 if (tube === null || tube > full) throw new Error(`tube ${tube}`)
 if (vent === null || vent > tube) throw new Error(`vent ${vent}`)
 if (early !== null) throw new Error('tier 4 must not break deep stone')
-if (tierOf(180) !== 7 || tierOf(12) !== 2 || tierOf(0) !== 1) throw new Error('tiers')
+if (tierOf(4500) !== 7 || tierOf(300) !== 2 || tierOf(0) !== 1) throw new Error('tiers')
 
 const world = createWorld()
 const you = playerOf(world)
 you.load = t7()
-you.spent = 180
+you.spent = 4500
 you.air = 400
 you.hp = 400
 you.maxHp = 400
@@ -78,8 +78,8 @@ if (young.raiders.length) throw new Error('tier 2 base was raided')
 const horned = starterLoad()
 horned.horn = 'lance'
 if (bodyBreakPower(horned, 'med') <= 0) throw new Error('lance horn should help break medium rock')
-if (cellSeconds(horned, 30, 'granite') === null) throw new Error('lance horn should slowly break granite without a breaker')
-if (cellSeconds(horned, 30, 'deep-stone') !== null) throw new Error('a horn must not break deep stone')
+if (cellSeconds(horned, 750, 'granite') === null) throw new Error('lance horn should slowly break granite without a breaker')
+if (cellSeconds(horned, 750, 'deep-stone') !== null) throw new Error('a horn must not break deep stone')
 
 const saw = starterLoad()
 saw.jaw = 'saw'
@@ -91,7 +91,7 @@ const spade = starterLoad()
 spade.arms = 2
 spade.armType = 'spade'
 spade.feet = 'claw'
-if (cellSeconds(spade, 55, 'sandstone') === null) throw new Error('spade arms should dig sandstone')
+if (cellSeconds(spade, 1375, 'sandstone') === null) throw new Error('spade arms should dig sandstone')
 
 const placed = createWorld()
 const trees = new Set(placed.nodes.filter((n) => n.kind === 'tree').map((n) => n.mat))
@@ -109,7 +109,7 @@ if (!volumeHits(vols, vols[0]!.x, vols[0]!.y, vols[0]!.z, 0.05)) throw new Error
 
 const gate = createWorld()
 const hero = playerOf(gate)
-hero.ep = 20
+hero.ep = 500
 hero.hp = 400
 hero.maxHp = 400
 hero.air = 400
@@ -419,7 +419,7 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
   if (!REARS.every((r) => r.place === 'rear')) throw new Error('rear fins must be placed at the rear')
   if (EXTRA_REAR.place !== 'rear' || EXTRA_REAR.branch !== 'fish') throw new Error('extra rear fins are fish-only and low toward the tail')
 
-  const you = { ep: 400, spent: 0, load: convertToGuppy(undefined), unlocked: [] as string[] }
+  const you = { ep: 10000, spent: 0, load: convertToGuppy(undefined), unlocked: [] as string[] }
   const mid = convertToGuppy({ ...starterLoad(), skin: 5, jaw: 'shark', legs: 4, size: 1 })
   if (mid.morph?.branch !== 'guppy') throw new Error('old save should become a guppy')
   if (mid.jaw !== 'nip' || mid.legs !== 0) throw new Error('converted body should be a guppy')
@@ -449,13 +449,13 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
   if (you.load.morph?.branch !== 'octopus') throw new Error('should be on the octopus branch')
   if (!landOk(you.load, you.spent)) throw new Error('webbed limbs should allow land movement')
 
-  const horned = { ep: 200, spent: 0, load: starterLoad(), unlocked: [] as string[] }
+  const horned = { ep: 5000, spent: 0, load: starterLoad(), unlocked: [] as string[] }
   ensureMorph(horned.load)
   tryBuy(horned, 'nub')
   const dmgIdle = hornDamage(ensureMorph(horned.load), 0, 10)
   const dmgFull = hornDamage(ensureMorph(horned.load), 10, 10)
   if (dmgFull <= dmgIdle) throw new Error('horn damage should scale with speed')
-  const plated = { ep: 80, spent: 0, load: starterLoad(), unlocked: [] as string[] }
+  const plated = { ep: 2000, spent: 0, load: starterLoad(), unlocked: [] as string[] }
   ensureMorph(plated.load)
   const beforeDef = compute(plated.load, plated.spent).def
   const plateBuy = tryBuy(plated, 'plating')
@@ -531,7 +531,7 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
 {
   const w = createWorld()
   const you = playerOf(w)
-  you.spent = 200
+  you.spent = 5000
   you.x = 80
   you.y = 8.6
   if (landOk(you.load, you.spent)) throw new Error('high spent without lungs or limbs must not go ashore')
@@ -539,7 +539,7 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
   if (you.x > shoreX(you.z) + 0.4) throw new Error(`shore must stop a water-only creature at the waterline, got ${you.x} shore=${shoreX(you.z)}`)
   if (!w.shoreWarned || !/lungs|land limbs/i.test(w.banner)) throw new Error(`shore should say lungs or land limbs, got "${w.banner}"`)
   if (w.bossUnlocked || w.ents.some((e) => e.kind === 'boss')) throw new Error('lungs/land must not be the level 1 boss gate')
-  you.ep = 20
+  you.ep = 500
   const buy = applyMorphBuy(you, 'lungs')
   if (!buy.ok) throw new Error(`lungs should be buyable: ${buy.reason}`)
   if (!landOk(you.load, 0)) throw new Error('lungs must allow land without a tier gate')
@@ -560,12 +560,12 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
   if (!/Attack .+ \/ 10 to face the boss/.test(bossMeterLine(you.load, you.spent))) {
     throw new Error(`meter should say Attack X / 10 to face the boss, got "${bossMeterLine(you.load, you.spent)}"`)
   }
-  you.ep = 20
+  you.ep = 500
   const fin = applyMorphBuy(you, 'spinyfin-side', { confirm: true })
   if (!fin.ok) throw new Error(`spiny fin should buy: ${fin.reason}`)
   // 6 + 3.5 = 9.5, just short of 10
   if (bossReady(you.load, you.spent)) throw new Error(`Spiny Fin alone should sit just under the threshold, got ${attackPower(you.load, you.spent)}`)
-  you.ep = Math.max(you.ep, 12)
+  you.ep = Math.max(you.ep, 300)
   const horn = applyMorphBuy(you, 'nub')
   if (!horn.ok) throw new Error(`bone nub should buy: ${horn.reason}`)
   if (attackPower(you.load, you.spent) < BOSS_ATTACK) throw new Error(`Spiny Fin + Bone Nub should reach Attack ${BOSS_ATTACK}, got ${attackPower(you.load, you.spent)}`)
@@ -601,12 +601,12 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
 {
   const w = createWorld()
   const you = playerOf(w)
-  you.ep = 40
+  you.ep = 1000
   you.x = 30
   you.y = 3
   const head = applyMorphBuy(you, 'hornedfrog', { confirm: true })
   if (!head.ok) throw new Error(`horned frog should buy: ${head.reason}`)
-  you.ep = Math.max(you.ep, 12)
+  you.ep = Math.max(you.ep, 300)
   const horn = applyMorphBuy(you, 'nub')
   if (!horn.ok) throw new Error(`nub after horned frog: ${horn.reason}`)
   if (!bossReady(you.load, you.spent)) throw new Error(`octopus bite head + horn should reach Attack ${BOSS_ATTACK}, got ${attackPower(you.load, you.spent)}`)
@@ -620,7 +620,7 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
 {
   const w = createWorld()
   const you = playerOf(w)
-  you.ep = 40
+  you.ep = 1000
   you.x = 20
   you.y = 3
   const horn = applyMorphBuy(you, 'coral')
@@ -676,7 +676,7 @@ console.log('all checks ok')
 {
   const w = createWorld()
   const you = playerOf(w)
-  you.ep = 20
+  you.ep = 500
   const buy = applyMorphBuy(you, 'lungs')
   if (!buy.ok) throw new Error(`lungs for land walk: ${buy.reason}`)
   you.x = 70
@@ -692,7 +692,7 @@ console.log('all checks ok')
 {
   const w = createWorld()
   const you = playerOf(w)
-  you.ep = 20
+  you.ep = 500
   applyMorphBuy(you, 'lungs')
   you.x = 110
   you.z = 0
@@ -799,7 +799,7 @@ console.log('all checks ok')
 {
   const w = createWorld()
   const you = playerOf(w)
-  you.ep = 20
+  you.ep = 500
   const buy = applyMorphBuy(you, 'lungs')
   if (!buy.ok) throw new Error(`lungs for jump test: ${buy.reason}`)
   you.x = 110
@@ -819,7 +819,7 @@ console.log('all checks ok')
   const you = playerOf(w)
   const tree = w.nodes.find((n) => n.kind === 'tree' && (n.rad ?? 0) > 0.14 && isDryLand(n.x, n.z ?? 0) && n.x > 90)
   if (!tree) throw new Error('expected a land tree to test slide-along')
-  you.ep = 20
+  you.ep = 500
   applyMorphBuy(you, 'lungs')
   // Glance in from a slight offset so a hard stop would pin us, but a slide should carry us past.
   you.x = tree.x - (tree.rad! + 1.2)
@@ -868,7 +868,7 @@ console.log('all checks ok')
     const w = createWorld()
     const you = playerOf(w)
     if (land) {
-      you.ep = 20
+      you.ep = 500
       applyMorphBuy(you, 'lungs')
     }
     const dt = 1 / 30

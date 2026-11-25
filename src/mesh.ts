@@ -957,7 +957,7 @@ export function creatureKey(load: Loadout, spent: number, species = ''): string 
   const morph = m
     ? [m.branch, m.skin, m.head, m.horn, m.hornLv, m.sideFin, m.bellyFin, m.dorsal, m.rear, m.extraRear, m.tail, m.limb, m.armor, m.lungs].join('|')
     : ''
-  return JSON.stringify({ ...load, morph, tier: tierOf(spent), bucket: Math.floor(spent / 40), species })
+  return JSON.stringify({ ...load, morph, tier: tierOf(spent), bucket: Math.floor(spent / 1000), species })
 }
 
 export function poseCreature(g: THREE.Group, time: number, moving: boolean, bite: number, facing: number): void {

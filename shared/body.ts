@@ -6,7 +6,7 @@ import { tierOf } from './rules'
 /** Visual scale. A tier-1 swimmer is about 55% of the old 1.27 body, then grows with tier and size. */
 export function bodyScale(load: Loadout, spent: number, boss = false): number {
   const tier = tierOf(spent)
-  const old = 0.9 + load.size * 0.4 + Math.min(0.35, spent / 500)
+  const old = 0.9 + load.size * 0.4 + Math.min(0.35, spent / 12500)
   const young = load.legs > 0 ? 1 : tier <= 1 ? (load.size <= 0.5 ? 0.36 : 0.55) : tier === 2 ? 0.64 : Math.min(1, 0.64 + (tier - 2) * 0.07)
   return old * young + (boss ? 1.05 : 0)
 }
@@ -44,7 +44,7 @@ const SPECIES: Record<string, { long: number; tall: number }> = {
 
 /** Guppy-stage hunter: small body, first minutes of a new game. */
 export function youngBite(load: Loadout, spent: number): boolean {
-  return spent < 12 && load.legs === 0 && load.size <= 0.55
+  return spent < 300 && load.legs === 0 && load.size <= 0.55
 }
 
 export function bodyBox(load: Loadout, spent: number, boss = false, species = ''): BodyBox {

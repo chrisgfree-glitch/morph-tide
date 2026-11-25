@@ -1,7 +1,7 @@
 import { exportCarves, importCarves } from './terrain'
 import { applyWorldSnapshot, playerOf, snapshotWorld, type Ent, type World } from './sim'
 import type { Piece } from './build'
-import type { Loadout } from './catalog'
+import { teethById, type Loadout } from './catalog'
 import { convertToGuppy, ensureMorph, isLegacyLoad } from './evolve'
 
 export const SAVE_KEY = 'evo2.eden.v2'
@@ -81,6 +81,7 @@ export function applyGameSave(w: World, data: GameSave): void {
     you.load = { ...you.load, ...data.load }
     ensureMorph(you.load)
   }
+  if (you.load.teeth && !teethById(you.load.teeth)) you.load.teeth = 'peg'
   if (data.unlocked) you.unlocked = data.unlocked
   if (data.bag) you.bag = data.bag
   if (data.gems) you.gems = data.gems
@@ -101,7 +102,7 @@ export function applyGameSave(w: World, data: GameSave): void {
   if (typeof data.time === 'number' && Number.isFinite(data.time)) w.time = data.time
   if (data.terrain) importCarves(data.terrain)
   applyWorldSnapshot(w, data)
-  const guppy = you.spent < 12 && you.load.legs === 0 && you.load.size <= 0.55
+  const guppy = you.spent < 300 && you.load.legs === 0 && you.load.size <= 0.55
   if (!guppy && /tiny guppy/i.test(w.banner)) {
     w.banner = ''
     w.bannerT = 0

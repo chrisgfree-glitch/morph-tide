@@ -417,7 +417,7 @@ export function buySpec(p: Progress, gemId: string, have: number): Buy {
   const gem = GEMS.find((g) => g.id === gemId)
   if (!gem) return { ok: false, reason: 'Unknown gem' }
   if (have < gem.need) return { ok: false, reason: `Need ${gem.need} ${gem.name}` }
-  if (p.ep < 40) return { ok: false, reason: 'Need 40 EP' }
+  if (p.ep < 1000) return { ok: false, reason: 'Need 1000 EP' }
   p.ep -= 40
   p.spent += 40
   p.load.spec = gemId

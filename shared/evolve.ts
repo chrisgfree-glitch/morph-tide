@@ -157,59 +157,59 @@ function part(
 }
 
 export const SKINS: PartDef[] = [
-  part('scales', 'Scales', 'skin', 10, { spd: 0.45, swim: 0.35, desc: 'Light overlapping scales. A little more speed.', tags: ['scales'] }),
-  part('slime', 'Slime / Eel', 'skin', 20, { evasion: 0.18, spd: 0.2, desc: 'Slick mucus coat. Harder for jaws to hold.', tags: ['evasion'] }),
-  part('spiny', 'Spiny Armor', 'skin', 35, { bite: 1.5, thorns: 2, def: 1, desc: 'Needle spines return damage to biters.', tags: ['thorns'] }),
-  part('plates', 'Bony Plates', 'skin', 50, { def: 4, hp: 8, spd: -0.15, desc: 'Heavy osteoderms. High defense.', tags: ['plates'] }),
-  part('bio', 'Bioluminescent Hide', 'skin', 70, { vision: 4, desc: 'Living glow. Stun-flash in the dark, and you can see in it.', tags: ['glow', 'stun', 'dark-sight'] }),
-  part('leather', 'Shark Leather', 'skin', 90, { hp: 18, spd: -0.3, swim: -0.25, desc: 'Dense denticle hide. Less bite and bleed damage, 5% slower.', tags: ['bite-resist', 'bleed-resist'] }),
-  part('blubber', 'Blubber', 'skin', 115, { hp: 14, bite: 2, spd: -0.55, swim: -0.4, desc: 'Thick fat. Stronger bites, cold resistance, slower swim.', tags: ['cold'] }),
-  part('whale', 'Whale-tough', 'skin', 140, { def: 3, hp: 22, dmgReduce: 0.28, spd: -0.2, desc: 'Very high damage reduction.', tags: ['reduce'] }),
-  part('orca', 'Orca', 'skin', 170, { bite: 5, hp: 16, spd: 0.55, swim: 0.5, def: 2, desc: 'Apex contrast hide. Power, pace, and presence.', tags: ['apex'] }),
-  part('magma', 'Magma Scale', 'skin', 200, { def: 3, hp: 12, heat: 2, bite: 2, desc: 'Tenth hide. Fire-tempered scales shrug heat and scorch on contact.', tags: ['heat', 'burn'] }),
+  part('scales', 'Scales', 'skin', 250, { spd: 0.45, swim: 0.35, desc: 'Light overlapping scales. A little more speed.', tags: ['scales'] }),
+  part('slime', 'Slime / Eel', 'skin', 500, { evasion: 0.18, spd: 0.2, desc: 'Slick mucus coat. Harder for jaws to hold.', tags: ['evasion'] }),
+  part('spiny', 'Spiny Armor', 'skin', 875, { bite: 1.5, thorns: 2, def: 1, desc: 'Needle spines return damage to biters.', tags: ['thorns'] }),
+  part('plates', 'Bony Plates', 'skin', 1250, { def: 4, hp: 8, spd: -0.15, desc: 'Heavy osteoderms. High defense.', tags: ['plates'] }),
+  part('bio', 'Bioluminescent Hide', 'skin', 1750, { vision: 4, desc: 'Living glow. Stun-flash in the dark, and you can see in it.', tags: ['glow', 'stun', 'dark-sight'] }),
+  part('leather', 'Shark Leather', 'skin', 2250, { hp: 18, spd: -0.3, swim: -0.25, desc: 'Dense denticle hide. Less bite and bleed damage, 5% slower.', tags: ['bite-resist', 'bleed-resist'] }),
+  part('blubber', 'Blubber', 'skin', 2875, { hp: 14, bite: 2, spd: -0.55, swim: -0.4, desc: 'Thick fat. Stronger bites, cold resistance, slower swim.', tags: ['cold'] }),
+  part('whale', 'Whale-tough', 'skin', 3500, { def: 3, hp: 22, dmgReduce: 0.28, spd: -0.2, desc: 'Very high damage reduction.', tags: ['reduce'] }),
+  part('orca', 'Orca', 'skin', 4250, { bite: 5, hp: 16, spd: 0.55, swim: 0.5, def: 2, desc: 'Apex contrast hide. Power, pace, and presence.', tags: ['apex'] }),
+  part('magma', 'Magma Scale', 'skin', 5000, { def: 3, hp: 12, heat: 2, bite: 2, desc: 'Tenth hide. Fire-tempered scales shrug heat and scorch on contact.', tags: ['heat', 'burn'] }),
 ]
 
 export const HEADS: PartDef[] = [
   part('guppy', 'Guppy', 'head', 0, { desc: 'The starting nibbler.', tags: [] }),
-  part('salmon', 'Salmon', 'head', 8, { branch: 'fish', swim: 0.6, spd: 0.35, desc: 'Streamlined cranum. Better current speed.', tags: [] }),
-  part('pike', 'Pike', 'head', 12, { branch: 'fish', bite: 3, desc: 'Long predatory snout. A heavier bite.', tags: [] }),
-  part('angler', 'Angler', 'head', 16, { branch: 'fish', bite: 2, vision: 2, desc: 'Lure on a stalk. Draws prey in the dark.', tags: ['lure', 'dark-sight'] }),
-  part('hammerhead', 'Hammerhead', 'head', 18, { branch: 'fish', vision: 5, spd: 0.2, desc: 'Wide cephalofoil. Excellent tracking.', tags: [] }),
-  part('swordfish', 'Swordfish Bill', 'head', 22, { branch: 'fish', bite: 2, spd: 0.4, desc: 'A piercing bill for high-speed charges.', tags: ['pierce'] }),
-  part('frog', 'Frog', 'head', 10, { branch: 'octopus', bite: 1, spd: 0.25, desc: 'Wide mouth and a springy jump on land.', tags: ['jump'] }),
-  part('axolotl', 'Axolotl', 'head', 14, { branch: 'octopus', hp: 12, desc: 'External gills. Slow, steady regeneration.', tags: ['regen'] }),
-  part('turtle', 'Turtle', 'head', 16, { branch: 'octopus', def: 3, bite: 1, desc: 'Beaked and shielded. Extra defense.', tags: [] }),
-  part('hornedfrog', 'Horned Frog', 'head', 18, { branch: 'octopus', bite: 3, desc: 'A cavernous bite and horned brow.', tags: [] }),
-  part('salamander', 'Giant Salamander', 'head', 20, { branch: 'octopus', hp: 16, bite: 2, desc: 'Broad amphibian head. Heavy and hardy.', tags: ['slam'] }),
+  part('salmon', 'Salmon', 'head', 200, { branch: 'fish', swim: 0.6, spd: 0.35, desc: 'Streamlined cranum. Better current speed.', tags: [] }),
+  part('pike', 'Pike', 'head', 300, { branch: 'fish', bite: 3, desc: 'Long predatory snout. A heavier bite.', tags: [] }),
+  part('angler', 'Angler', 'head', 400, { branch: 'fish', bite: 2, vision: 2, desc: 'Lure on a stalk. Draws prey in the dark.', tags: ['lure', 'dark-sight'] }),
+  part('hammerhead', 'Hammerhead', 'head', 450, { branch: 'fish', vision: 5, spd: 0.2, desc: 'Wide cephalofoil. Excellent tracking.', tags: [] }),
+  part('swordfish', 'Swordfish Bill', 'head', 550, { branch: 'fish', bite: 2, spd: 0.4, desc: 'A piercing bill for high-speed charges.', tags: ['pierce'] }),
+  part('frog', 'Frog', 'head', 250, { branch: 'octopus', bite: 1, spd: 0.25, desc: 'Wide mouth and a springy jump on land.', tags: ['jump'] }),
+  part('axolotl', 'Axolotl', 'head', 350, { branch: 'octopus', hp: 12, desc: 'External gills. Slow, steady regeneration.', tags: ['regen'] }),
+  part('turtle', 'Turtle', 'head', 400, { branch: 'octopus', def: 3, bite: 1, desc: 'Beaked and shielded. Extra defense.', tags: [] }),
+  part('hornedfrog', 'Horned Frog', 'head', 450, { branch: 'octopus', bite: 3, desc: 'A cavernous bite and horned brow.', tags: [] }),
+  part('salamander', 'Giant Salamander', 'head', 500, { branch: 'octopus', hp: 16, bite: 2, desc: 'Broad amphibian head. Heavy and hardy.', tags: ['slam'] }),
 ]
 
 export const HORNS: PartDef[] = [
-  part('nub', 'Bone Nub', 'horn', 8, { costs: [8, 14, 22], sharpness: 2, desc: 'A blunt starter horn. Damage scales with speed.', tags: [] }),
-  part('coral', 'Coral Spike', 'horn', 12, { costs: [12, 20, 32], sharpness: 4, desc: 'Serrated coral. Applies bleed.', tags: ['bleed'] }),
-  part('lance', 'Spiral Lance', 'horn', 16, { costs: [16, 28, 44], sharpness: 6, desc: 'Rams 2.5× at full speed and pierces armor.', tags: ['pierce', 'full-rush'] }),
-  part('crest', 'Hammer Crest', 'horn', 18, { costs: [18, 30, 48], sharpness: 5, desc: 'Blunt hammer. Knockback, and it can break rocks.', tags: ['blunt', 'knock', 'break-rock'] }),
-  part('trident', 'Obsidian Trident', 'horn', 24, { costs: [24, 40, 64], sharpness: 9, desc: 'Three volcanic tines. Burns on hit.', tags: ['burn'] }),
+  part('nub', 'Bone Nub', 'horn', 200, { costs: [200, 350, 550], sharpness: 2, desc: 'A blunt starter horn. Damage scales with speed.', tags: [] }),
+  part('coral', 'Coral Spike', 'horn', 300, { costs: [300, 500, 800], sharpness: 4, desc: 'Serrated coral. Applies bleed.', tags: ['bleed'] }),
+  part('lance', 'Spiral Lance', 'horn', 400, { costs: [400, 700, 1100], sharpness: 6, desc: 'Rams 2.5× at full speed and pierces armor.', tags: ['pierce', 'full-rush'] }),
+  part('crest', 'Hammer Crest', 'horn', 450, { costs: [450, 750, 1200], sharpness: 5, desc: 'Blunt hammer. Knockback, and it can break rocks.', tags: ['blunt', 'knock', 'break-rock'] }),
+  part('trident', 'Obsidian Trident', 'horn', 600, { costs: [600, 1000, 1600], sharpness: 9, desc: 'Three volcanic tines. Burns on hit.', tags: ['burn'] }),
 ]
 
 export const FINS: PartDef[] = [
-  part('fan', 'Fan', 'fin', 6, { place: 'side', swim: 0.25, spd: 0.15, desc: 'Simple paired fans. Modest speed. Cheapest fish-branch fin.', tags: [] }),
-  part('spinyfin-side', 'Spiny Fin', 'fin', 10, { branch: 'fish', place: 'side', bite: 3.5, swim: 0.15, desc: 'Basic fish-branch pecs. The biggest attack boost of the fin set.', tags: [] }),
-  part('dolphin', 'Dolphin Fin', 'fin', 18, { branch: 'fish', place: 'side', swim: 1.15, spd: 0.7, evasion: 0.16, desc: 'Very high speed plus evasion: attacks against you are less likely to hit. Second-fastest fins, after Manta.', tags: ['evasion'] }),
-  part('lionfish', 'Lionfish Fin', 'fin', 24, { branch: 'fish', place: 'side', deter: 0.14, def: 0.5, desc: 'Defensive deterrence only. Venomous spines and warning colors lower an attacker\'s chance to hit. Separate from evasion and stacks with it.', tags: ['deter'] }),
-  part('sharkfin-side', 'Shark Fin', 'fin', 30, { branch: 'fish', place: 'side', bite: 1.75, swim: 0.55, spd: 0.35, desc: 'A smaller attack boost than Spiny Fin, but more speed than Fan.', tags: [] }),
-  part('manta', 'Manta Fin', 'fin', 40, { branch: 'fish', place: 'side', swim: 1.45, spd: 0.95, desc: 'The largest and fastest fins. Endgame tier. Faster overall than Dolphin Fin.', tags: [] }),
-  part('flying', 'Flying-fish Wings', 'fin', 16, { place: 'side', swim: 0.7, spd: 0.55, desc: 'Long gliding pecs. Fast surface runs.', tags: ['glide'] }),
-  part('lobe', 'Lobe', 'fin', 12, { place: 'belly', swim: 0.2, spd: 0.15, desc: 'Fleshy belly fins. A first step toward limbs.', tags: [] }),
+  part('fan', 'Fan', 'fin', 150, { place: 'side', swim: 0.25, spd: 0.15, desc: 'Simple paired fans. Modest speed. Cheapest fish-branch fin.', tags: [] }),
+  part('spinyfin-side', 'Spiny Fin', 'fin', 250, { branch: 'fish', place: 'side', bite: 3.5, swim: 0.15, desc: 'Basic fish-branch pecs. The biggest attack boost of the fin set.', tags: [] }),
+  part('dolphin', 'Dolphin Fin', 'fin', 450, { branch: 'fish', place: 'side', swim: 1.15, spd: 0.7, evasion: 0.16, desc: 'Very high speed plus evasion: attacks against you are less likely to hit. Second-fastest fins, after Manta.', tags: ['evasion'] }),
+  part('lionfish', 'Lionfish Fin', 'fin', 600, { branch: 'fish', place: 'side', deter: 0.14, def: 0.5, desc: 'Defensive deterrence only. Venomous spines and warning colors lower an attacker\'s chance to hit. Separate from evasion and stacks with it.', tags: ['deter'] }),
+  part('sharkfin-side', 'Shark Fin', 'fin', 750, { branch: 'fish', place: 'side', bite: 1.75, swim: 0.55, spd: 0.35, desc: 'A smaller attack boost than Spiny Fin, but more speed than Fan.', tags: [] }),
+  part('manta', 'Manta Fin', 'fin', 1000, { branch: 'fish', place: 'side', swim: 1.45, spd: 0.95, desc: 'The largest and fastest fins. Endgame tier. Faster overall than Dolphin Fin.', tags: [] }),
+  part('flying', 'Flying-fish Wings', 'fin', 400, { place: 'side', swim: 0.7, spd: 0.55, desc: 'Long gliding pecs. Fast surface runs.', tags: ['glide'] }),
+  part('lobe', 'Lobe', 'fin', 300, { place: 'belly', swim: 0.2, spd: 0.15, desc: 'Fleshy belly fins. A first step toward limbs.', tags: [] }),
 ]
 
 export const LIMBS: PartDef[] = [
-  part('mudskipper', 'Mudskipper', 'limb', 18, { branch: 'octopus', place: 'side+belly', spd: 0.2, desc: 'Stout amphibious limbs for wet sand and shallows.', tags: ['land'] }),
-  part('webbed', 'Webbed Limbs', 'limb', 22, { branch: 'octopus', place: 'side+belly', swim: 0.4, spd: 0.25, desc: 'Webbed arms and belly limbs. Needs the octopus body; extra rear fins must come off.', tags: ['land'] }),
-  part('sallegs', 'Salamander Legs', 'limb', 26, { branch: 'octopus', place: 'side+belly', spd: 0.3, hp: 6, desc: 'True walking legs on the sides and belly.', tags: ['land'] }),
+  part('mudskipper', 'Mudskipper', 'limb', 450, { branch: 'octopus', place: 'side+belly', spd: 0.2, desc: 'Stout amphibious limbs for wet sand and shallows.', tags: ['land'] }),
+  part('webbed', 'Webbed Limbs', 'limb', 550, { branch: 'octopus', place: 'side+belly', swim: 0.4, spd: 0.25, desc: 'Webbed arms and belly limbs. Needs the octopus body; extra rear fins must come off.', tags: ['land'] }),
+  part('sallegs', 'Salamander Legs', 'limb', 650, { branch: 'octopus', place: 'side+belly', spd: 0.3, hp: 6, desc: 'True walking legs on the sides and belly.', tags: ['land'] }),
 ]
 
 export const LUNGS: PartDef[] = [
-  part('lungs', 'Lungs', 'lungs', 10, {
+  part('lungs', 'Lungs', 'lungs', 250, {
     desc: 'Breathe on land. Buy this (or octopus land limbs) to go ashore.',
     tags: ['lungs'],
     air: 8,
@@ -217,14 +217,14 @@ export const LUNGS: PartDef[] = [
 ]
 
 export const ARMORS: PartDef[] = [
-  part('bonescales', 'Bone Scales', 'armor', 14, {
+  part('bonescales', 'Bone Scales', 'armor', 350, {
     place: 'back',
     def: 2,
     hp: 4,
     desc: 'Overlapping bone scales along the back. Light back armor. Distinct from the Bony Plates skin and from dorsals.',
     tags: ['back-armor'],
   }),
-  part('plating', 'Plating', 'armor', 28, {
+  part('plating', 'Plating', 'armor', 700, {
     place: 'back',
     def: 4,
     hp: 6,
@@ -235,29 +235,29 @@ export const ARMORS: PartDef[] = [
 ]
 
 export const DORSALS: PartDef[] = [
-  part('ridge', 'Low Ridge', 'dorsal', 5, { place: 'back', swim: 0.1, desc: 'A low stabilizing ridge.', tags: [] }),
-  part('spinyfin', 'Spiny Dorsal', 'dorsal', 10, { place: 'back', thorns: 1, def: 0.5, desc: 'A row of defensive spines along the back. Distinct from Spiny Fin.', tags: ['thorns'] }),
-  part('sail', 'Sail', 'dorsal', 14, { place: 'back', swim: 0.4, spd: 0.2, desc: 'A tall sail for current and display.', tags: [] }),
-  part('sharkfin', 'Shark Dorsal', 'dorsal', 16, { branch: 'fish', place: 'back', swim: 0.5, spd: 0.35, desc: 'The classic fish-branch cutter dorsal. Distinct from Shark Fin.', tags: [] }),
-  part('newt', 'Newt Crest', 'dorsal', 14, { branch: 'octopus', place: 'back', swim: 0.25, desc: 'A soft amphibian crest.', tags: [] }),
+  part('ridge', 'Low Ridge', 'dorsal', 125, { place: 'back', swim: 0.1, desc: 'A low stabilizing ridge.', tags: [] }),
+  part('spinyfin', 'Spiny Dorsal', 'dorsal', 250, { place: 'back', thorns: 1, def: 0.5, desc: 'A row of defensive spines along the back. Distinct from Spiny Fin.', tags: ['thorns'] }),
+  part('sail', 'Sail', 'dorsal', 350, { place: 'back', swim: 0.4, spd: 0.2, desc: 'A tall sail for current and display.', tags: [] }),
+  part('sharkfin', 'Shark Dorsal', 'dorsal', 400, { branch: 'fish', place: 'back', swim: 0.5, spd: 0.35, desc: 'The classic fish-branch cutter dorsal. Distinct from Shark Fin.', tags: [] }),
+  part('newt', 'Newt Crest', 'dorsal', 350, { branch: 'octopus', place: 'back', swim: 0.25, desc: 'A soft amphibian crest.', tags: [] }),
 ]
 
 export const TAILS: PartDef[] = [
-  part('fantail', 'Fan', 'tail', 6, { swim: 0.25, desc: 'A rounded caudal fan. Close-range slap that staggers prey.', tags: ['slap'] }),
-  part('forked', 'Forked', 'tail', 10, { swim: 0.5, spd: 0.25, bite: 1, desc: 'A forked tail built for pace. A cutting slash on the pass.', tags: ['slash'] }),
-  part('eel', 'Eel', 'tail', 12, { swim: 0.35, evasion: 0.06, desc: 'A long ribbon tail. Slippery in weeds, and a shocking lash.', tags: ['shock'] }),
-  part('thresher', 'Thresher', 'tail', 20, { swim: 0.3, bite: 1, desc: 'A whip-long upper lobe. Stun swipe.', tags: ['whip-stun'] }),
-  part('barbed', 'Barbed Salamander', 'tail', 22, { branch: 'octopus', bite: 2, desc: 'A heavy, barbed tail. Slam attack.', tags: ['slam'] }),
+  part('fantail', 'Fan', 'tail', 150, { swim: 0.25, desc: 'A rounded caudal fan. Close-range slap that staggers prey.', tags: ['slap'] }),
+  part('forked', 'Forked', 'tail', 250, { swim: 0.5, spd: 0.25, bite: 1, desc: 'A forked tail built for pace. A cutting slash on the pass.', tags: ['slash'] }),
+  part('eel', 'Eel', 'tail', 300, { swim: 0.35, evasion: 0.06, desc: 'A long ribbon tail. Slippery in weeds, and a shocking lash.', tags: ['shock'] }),
+  part('thresher', 'Thresher', 'tail', 500, { swim: 0.3, bite: 1, desc: 'A whip-long upper lobe. Stun swipe.', tags: ['whip-stun'] }),
+  part('barbed', 'Barbed Salamander', 'tail', 550, { branch: 'octopus', bite: 2, desc: 'A heavy, barbed tail. Slam attack.', tags: ['slam'] }),
 ]
 
 export const REARS: PartDef[] = [
-  part('lowrear', 'Low Ridge Rear Fin', 'rear', 6, { place: 'rear', turn: 0.12, accel: 0.08, desc: 'A low keel near the tail, not on the back. Modest turn and acceleration.', tags: ['agility'] }),
-  part('spinyrear', 'Spiny Rear Fin', 'rear', 10, { place: 'rear', turn: 0.18, accel: 0.1, desc: 'A spiny keel low toward the tail. Distinct from Spiny Fin and Spiny Dorsal. Sharper turning.', tags: ['agility'] }),
-  part('sailrear', 'Sail Rear Fin', 'rear', 14, { place: 'rear', turn: 0.16, accel: 0.22, desc: 'A small sail set low by the tail, not on the back. Strong acceleration.', tags: ['agility'] }),
-  part('dorsalrear', 'Dorsal-style Rear Fin', 'rear', 18, { place: 'rear', turn: 0.24, accel: 0.2, desc: 'A dorsal-shaped fin placed low toward the tail, not on the back. High maneuverability.', tags: ['agility'] }),
+  part('lowrear', 'Low Ridge Rear Fin', 'rear', 150, { place: 'rear', turn: 0.12, accel: 0.08, desc: 'A low keel near the tail, not on the back. Modest turn and acceleration.', tags: ['agility'] }),
+  part('spinyrear', 'Spiny Rear Fin', 'rear', 250, { place: 'rear', turn: 0.18, accel: 0.1, desc: 'A spiny keel low toward the tail. Distinct from Spiny Fin and Spiny Dorsal. Sharper turning.', tags: ['agility'] }),
+  part('sailrear', 'Sail Rear Fin', 'rear', 350, { place: 'rear', turn: 0.16, accel: 0.22, desc: 'A small sail set low by the tail, not on the back. Strong acceleration.', tags: ['agility'] }),
+  part('dorsalrear', 'Dorsal-style Rear Fin', 'rear', 450, { place: 'rear', turn: 0.24, accel: 0.2, desc: 'A dorsal-shaped fin placed low toward the tail, not on the back. High maneuverability.', tags: ['agility'] }),
 ]
 
-export const EXTRA_REAR: PartDef = part('extraRear', 'Extra rear fin', 'extraRear', 10, {
+export const EXTRA_REAR: PartDef = part('extraRear', 'Extra rear fin', 'extraRear', 250, {
   branch: 'fish',
   place: 'rear',
   turn: 0.1,

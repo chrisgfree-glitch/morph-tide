@@ -70,7 +70,10 @@ export interface Step {
   grip?: number
 }
 
-export const TIER_SPENT = [0, 12, 30, 55, 90, 130, 180, 240, 320, 420]
+/** All EP numbers are 25x the original economy so upgrades read 100, 500, 1,000... */
+export const EP_SCALE = 25
+
+export const TIER_SPENT = [0, 300, 750, 1375, 2250, 3250, 4500, 6000, 8000, 10500]
 
 export const COLORS = [0x6e8e86, 0x66724c, 0xb7a488, 0x7a5346, 0x45525c, 0x6a5d6c, 0xc4b59a, 0x8a564c]
 export const ACCENTS = [0xd4c4a4, 0xe4ece4, 0x8b9a78, 0x7e97a0, 0xc4a498, 0xa88862, 0xd5e0dc, 0x9a5e52]
@@ -108,7 +111,7 @@ export function starterLoad(): Loadout {
 }
 
 function p(id: string, name: string, tier: number, cost: number, extra: Partial<Pick> = {}): Pick {
-  return { id, name, tier, cost, ...extra }
+  return { id, name, tier, cost: cost * 25, ...extra }
 }
 
 export const JAWS: Pick[] = [
@@ -137,27 +140,18 @@ export const JAWS: Pick[] = [
 ]
 
 export const TEETH: Pick[] = [
+  // p() multiplies cost by 25: 4 -> 100, 20 -> 500 ... 3000 -> 75,000
   p('peg', 'Peg teeth', 1, 0, { bite: 0, n: 4, len: 0.06, feat: 'peg' }),
-  p('needle', 'Needle teeth', 1, 4, { bite: 2, spd: 0.1, n: 6, len: 0.14, feat: 'needle' }),
-  p('conical', 'Conical teeth', 1, 4, { bite: 2, n: 5, len: 0.1, feat: 'needle' }),
-  p('comb', 'Comb teeth', 1, 5, { bite: 1, spd: 0.15, n: 8, len: 0.08, feat: 'comb' }),
-  p('serrated', 'Serrated teeth', 2, 8, { bite: 4, n: 7, len: 0.12, feat: 'row' }),
-  p('buck', 'Buck teeth', 2, 8, { bite: 2, n: 2, len: 0.16, feat: 'peg' }),
-  p('hookfang', 'Hooked fangs', 3, 12, { bite: 4, n: 4, len: 0.18, feat: 'fang' }),
-  p('sharkrow', 'Shark rows', 3, 14, { bite: 5, n: 10, len: 0.1, feat: 'row' }),
-  p('venom', 'Venom fangs', 4, 16, { bite: 5, n: 2, len: 0.2, feat: 'fang' }),
-  p('saber', 'Saber teeth', 4, 18, { bite: 6, spd: -0.1, n: 2, len: 0.28, feat: 'saber' }),
-  p('tusk', 'Tusks', 4, 16, { bite: 4, def: 1, n: 2, len: 0.24, feat: 'tusk' }),
-  p('molar', 'Crushing molars', 5, 20, { bite: 5, spd: -0.15, n: 4, len: 0.08, feat: 'molar' }),
-  p('interlock', 'Interlocking teeth', 5, 18, { bite: 4, def: 1, n: 8, len: 0.1, feat: 'row' }),
-  p('fishtrap', 'Fish-trap teeth', 5, 18, { bite: 4, n: 9, len: 0.12, feat: 'comb' }),
-  p('baleenplate', 'Baleen plates', 6, 22, { bite: 1, spd: 0.2, n: 6, len: 0.16, feat: 'plate' }),
-  p('grind', 'Grinding plates', 6, 22, { bite: 4, spd: -0.1, n: 2, len: 0.06, feat: 'plate' }),
-  p('radula', 'Rasp radula', 6, 20, { bite: 3, n: 5, len: 0.05, feat: 'radula' }),
-  p('bonecrush', 'Bone-crusher', 7, 28, { bite: 7, spd: -0.2, n: 4, len: 0.1, feat: 'molar' }),
-  p('carnassial', 'Carnassials', 7, 30, { bite: 8, n: 4, len: 0.14, feat: 'saber' }),
-  p('glow', 'Glow-tipped lure teeth', 8, 26, { bite: 4, spd: 0.1, n: 5, len: 0.12, feat: 'glow' }),
-  p('flint', 'Flint-tipped teeth', 5, 16, { bite: 5, n: 6, len: 0.11, feat: 'needle' }),
+  p('nub', 'Nub Teeth', 1, 4, { bite: 1, n: 5, len: 0.06, feat: 'peg' }),
+  p('needle', 'Needle Pins', 1, 20, { bite: 2, spd: 0.1, n: 7, len: 0.14, feat: 'needle' }),
+  p('sawrow', 'Saw Row', 2, 40, { bite: 4, n: 8, len: 0.11, feat: 'row' }),
+  p('hookfang', 'Hook Fangs', 3, 100, { bite: 5, n: 4, len: 0.18, feat: 'fang' }),
+  p('razor', 'Razor Wedges', 4, 200, { bite: 6, n: 8, len: 0.14, feat: 'row' }),
+  p('bonecrush', 'Bone Crushers', 5, 400, { bite: 7, spd: -0.1, n: 4, len: 0.1, feat: 'molar' }),
+  p('twindagger', 'Twin Daggers', 6, 800, { bite: 9, n: 2, len: 0.3, feat: 'saber' }),
+  p('sharkrow', 'Shark Rows', 7, 1400, { bite: 11, n: 14, len: 0.14, feat: 'row' }),
+  p('spiral', 'Spiral Drills', 8, 2000, { bite: 13, n: 6, len: 0.2, feat: 'needle' }),
+  p('abyss', 'Abyss Maw', 9, 3000, { bite: 16, spd: 0.1, n: 12, len: 0.18, feat: 'glow' }),
 ]
 
 export const FEET: Pick[] = [
@@ -197,20 +191,20 @@ export const HORNS: Pick[] = [
 
 export const FIN_LINE: Step[] = [
   { name: 'No fins', tier: 1, cost: 0 },
-  { name: 'Pectoral fins', tier: 1, cost: 4, swim: 1.3, spd: 0.2 },
-  { name: 'Dorsal fin', tier: 1, cost: 5, swim: 0.7, spd: 0.35 },
-  { name: 'Extra back fins', tier: 1, cost: 6, swim: 0.9, spd: 0.25 },
-  { name: 'Sail fin', tier: 5, cost: 18, swim: 1.6, spd: 0.4 },
+  { name: 'Pectoral fins', tier: 1, cost: 100, swim: 1.3, spd: 0.2 },
+  { name: 'Dorsal fin', tier: 1, cost: 125, swim: 0.7, spd: 0.35 },
+  { name: 'Extra back fins', tier: 1, cost: 150, swim: 0.9, spd: 0.25 },
+  { name: 'Sail fin', tier: 5, cost: 450, swim: 1.6, spd: 0.4 },
 ]
 
 export const TAIL_LINE: Step[] = [
   { name: 'Fan tail', tier: 1, cost: 0, swim: 0.4 },
-  { name: 'Fork tail', tier: 1, cost: 4, swim: 1.1, spd: 0.3 },
-  { name: 'Eel ribbon', tier: 1, cost: 5, swim: 1.3, spd: 0.15 },
-  { name: 'Paddle tail', tier: 1, cost: 5, swim: 1, bite: 1 },
-  { name: 'Long tail', tier: 3, cost: 12, swim: 0.6, spd: 0.4 },
-  { name: 'Spiked tail', tier: 5, cost: 18, bite: 4, def: 1 },
-  { name: 'Club tail', tier: 6, cost: 24, bite: 7, spd: -0.2 },
+  { name: 'Fork tail', tier: 1, cost: 100, swim: 1.1, spd: 0.3 },
+  { name: 'Eel ribbon', tier: 1, cost: 125, swim: 1.3, spd: 0.15 },
+  { name: 'Paddle tail', tier: 1, cost: 125, swim: 1, bite: 1 },
+  { name: 'Long tail', tier: 3, cost: 300, swim: 0.6, spd: 0.4 },
+  { name: 'Spiked tail', tier: 5, cost: 450, bite: 4, def: 1 },
+  { name: 'Club tail', tier: 6, cost: 600, bite: 7, spd: -0.2 },
 ]
 
 export interface SkinTier {
@@ -275,32 +269,32 @@ export const SKINS: SkinTier[] = skinTable()
 
 export const ARMOR_LINE: Step[] = [
   { name: 'Bare hide', tier: 1, cost: 0 },
-  { name: 'Basic scales', tier: 1, cost: 5, def: 1, hp: 4 },
-  { name: 'Armor plates', tier: 5, cost: 20, def: 4, hp: 14, spd: -0.3 },
-  { name: 'Shell', tier: 6, cost: 26, def: 6, hp: 18, spd: -0.5 },
-  { name: 'Spiked shell', tier: 7, cost: 32, def: 7, hp: 16, bite: 2, spd: -0.4 },
+  { name: 'Basic scales', tier: 1, cost: 125, def: 1, hp: 4 },
+  { name: 'Armor plates', tier: 5, cost: 500, def: 4, hp: 14, spd: -0.3 },
+  { name: 'Shell', tier: 6, cost: 650, def: 6, hp: 18, spd: -0.5 },
+  { name: 'Spiked shell', tier: 7, cost: 800, def: 7, hp: 16, bite: 2, spd: -0.4 },
 ]
 
 export const EYE_LINE: Step[] = [
   { name: 'Bead eyes', tier: 1, cost: 0, vision: 8 },
-  { name: 'Wide eyes', tier: 3, cost: 10, vision: 12 },
-  { name: 'Stalk eyes', tier: 5, cost: 16, vision: 16 },
-  { name: 'Eye cluster', tier: 6, cost: 20, vision: 20, def: 1 },
+  { name: 'Wide eyes', tier: 3, cost: 250, vision: 12 },
+  { name: 'Stalk eyes', tier: 5, cost: 400, vision: 16 },
+  { name: 'Eye cluster', tier: 6, cost: 500, vision: 20, def: 1 },
 ]
 
 export const LUNG_LINE: Step[] = [
   { name: 'Gills only', tier: 1, cost: 0, air: 0, swim: 0.4 },
-  { name: 'Basic lungs', tier: 2, cost: 6, air: 16 },
-  { name: 'Strong lungs', tier: 5, cost: 18, air: 36, hp: 6 },
-  { name: 'Abyss lungs', tier: 9, cost: 36, air: 70, swim: 1, def: 2 },
+  { name: 'Basic lungs', tier: 2, cost: 150, air: 16 },
+  { name: 'Strong lungs', tier: 5, cost: 450, air: 36, hp: 6 },
+  { name: 'Abyss lungs', tier: 9, cost: 900, air: 70, swim: 1, def: 2 },
 ]
 
 export const LEG_LINE: Step[] = [
   { name: 'No legs', tier: 1, cost: 0 },
-  { name: 'Two legs', tier: 2, cost: 8, spd: 1.2 },
-  { name: 'Four legs', tier: 3, cost: 14, spd: 1.8, kick: 1 },
-  { name: 'Six legs', tier: 5, cost: 22, spd: 1.5, def: 1 },
-  { name: 'Eight legs', tier: 6, cost: 28, spd: 1.3, def: 2, grip: 0.4 },
+  { name: 'Two legs', tier: 2, cost: 200, spd: 1.2 },
+  { name: 'Four legs', tier: 3, cost: 350, spd: 1.8, kick: 1 },
+  { name: 'Six legs', tier: 5, cost: 550, spd: 1.5, def: 1 },
+  { name: 'Eight legs', tier: 6, cost: 700, spd: 1.3, def: 2, grip: 0.4 },
 ]
 
 /** Pair index 1..8. min tier encoded in rules.maxWings. */
@@ -350,29 +344,29 @@ export interface Tool {
 }
 
 export const BREAKERS: Tool[] = [
-  { id: 'tusks', name: 'Tusks', tier: 4, cost: 18, bite: 3, soft: 1.2, med: 0.95, hard: 0.9, very: 0.9, feat: 'tusk' },
-  { id: 'rhino', name: 'Rhino horn', tier: 4, cost: 18, bite: 4, soft: 1.1, med: 1.05, hard: 0.95, very: 0.92, feat: 'horn' },
-  { id: 'clubtail', name: 'Club tail', tier: 4, cost: 16, bite: 5, soft: 1.3, med: 1, hard: 0.85, very: 0.88, feat: 'club' },
-  { id: 'shovel', name: 'Shovel forelimbs', tier: 4, cost: 16, bite: 1, soft: 1.5, med: 1.1, hard: 0.8, very: 0.85, feat: 'spade' },
-  { id: 'drill', name: 'Drill snout', tier: 4, cost: 20, bite: 2, soft: 1.1, med: 1.2, hard: 1.15, very: 1.05, feat: 'drill' },
-  { id: 'hammerhead', name: 'Hammerhead skull', tier: 4, cost: 20, bite: 4, soft: 1.2, med: 1.15, hard: 1.05, very: 1.1, feat: 'hammer' },
-  { id: 'pickclaws', name: 'Pickaxe claws', tier: 4, cost: 18, bite: 3, soft: 1.1, med: 1.25, hard: 1.2, very: 1, feat: 'pick' },
-  { id: 'spikearms', name: 'Spiked digging arms', tier: 4, cost: 18, bite: 3, soft: 1.3, med: 1.1, hard: 1, very: 0.95, feat: 'spike' },
-  { id: 'crushbeak', name: 'Rock-crushing beak', tier: 4, cost: 20, bite: 5, soft: 1.1, med: 1.2, hard: 1.1, very: 1.12, feat: 'beak' },
-  { id: 'dome', name: 'Dome skull', tier: 4, cost: 22, bite: 6, soft: 1.4, med: 1.25, hard: 1.15, very: 1.2, feat: 'dome' },
+  { id: 'tusks', name: 'Tusks', tier: 4, cost: 450, bite: 3, soft: 1.2, med: 0.95, hard: 0.9, very: 0.9, feat: 'tusk' },
+  { id: 'rhino', name: 'Rhino horn', tier: 4, cost: 450, bite: 4, soft: 1.1, med: 1.05, hard: 0.95, very: 0.92, feat: 'horn' },
+  { id: 'clubtail', name: 'Club tail', tier: 4, cost: 400, bite: 5, soft: 1.3, med: 1, hard: 0.85, very: 0.88, feat: 'club' },
+  { id: 'shovel', name: 'Shovel forelimbs', tier: 4, cost: 400, bite: 1, soft: 1.5, med: 1.1, hard: 0.8, very: 0.85, feat: 'spade' },
+  { id: 'drill', name: 'Drill snout', tier: 4, cost: 500, bite: 2, soft: 1.1, med: 1.2, hard: 1.15, very: 1.05, feat: 'drill' },
+  { id: 'hammerhead', name: 'Hammerhead skull', tier: 4, cost: 500, bite: 4, soft: 1.2, med: 1.15, hard: 1.05, very: 1.1, feat: 'hammer' },
+  { id: 'pickclaws', name: 'Pickaxe claws', tier: 4, cost: 450, bite: 3, soft: 1.1, med: 1.25, hard: 1.2, very: 1, feat: 'pick' },
+  { id: 'spikearms', name: 'Spiked digging arms', tier: 4, cost: 450, bite: 3, soft: 1.3, med: 1.1, hard: 1, very: 0.95, feat: 'spike' },
+  { id: 'crushbeak', name: 'Rock-crushing beak', tier: 4, cost: 500, bite: 5, soft: 1.1, med: 1.2, hard: 1.1, very: 1.12, feat: 'beak' },
+  { id: 'dome', name: 'Dome skull', tier: 4, cost: 550, bite: 6, soft: 1.4, med: 1.25, hard: 1.15, very: 1.2, feat: 'dome' },
 ]
 
 export const CUTTERS: Tool[] = [
-  { id: 'beaver', name: 'Beaver chisel teeth', tier: 4, cost: 16, bite: 2, soft: 1.4, med: 1, hard: 0.85, very: 0.8, feat: 'chisel' },
-  { id: 'sawjaw', name: 'Saw-tooth jaws', tier: 4, cost: 16, bite: 3, soft: 1.2, med: 1.15, hard: 1, very: 0.9, feat: 'saw' },
-  { id: 'crushbite', name: 'Crushing bite', tier: 4, cost: 18, bite: 4, soft: 1.1, med: 1.1, hard: 1.05, very: 1, feat: 'crush' },
-  { id: 'tailbash', name: 'Tail bash', tier: 4, cost: 14, bite: 4, soft: 1.3, med: 0.9, hard: 0.8, very: 0.75, feat: 'club' },
-  { id: 'axeclaws', name: 'Axe-blade claws', tier: 4, cost: 18, bite: 4, soft: 1.2, med: 1.2, hard: 1.1, very: 0.95, feat: 'axe' },
-  { id: 'sawnout', name: 'Serrated saw snout', tier: 4, cost: 18, bite: 3, soft: 1.15, med: 1.2, hard: 1.15, very: 1, feat: 'saw' },
-  { id: 'scythe', name: 'Mantis scythe', tier: 4, cost: 18, bite: 5, soft: 1.25, med: 1.05, hard: 0.95, very: 0.85, feat: 'blade' },
-  { id: 'gouge', name: 'Horn gouge', tier: 4, cost: 16, bite: 3, soft: 1.1, med: 1.15, hard: 1.05, very: 0.9, feat: 'horn' },
-  { id: 'ram', name: 'Body ram', tier: 4, cost: 14, bite: 3, soft: 1.2, med: 1, hard: 0.9, very: 0.85, feat: 'ram' },
-  { id: 'antler', name: 'Stag antler rake', tier: 4, cost: 16, bite: 3, soft: 1.3, med: 1.1, hard: 0.95, very: 0.88, feat: 'rake' },
+  { id: 'beaver', name: 'Beaver chisel teeth', tier: 4, cost: 400, bite: 2, soft: 1.4, med: 1, hard: 0.85, very: 0.8, feat: 'chisel' },
+  { id: 'sawjaw', name: 'Saw-tooth jaws', tier: 4, cost: 400, bite: 3, soft: 1.2, med: 1.15, hard: 1, very: 0.9, feat: 'saw' },
+  { id: 'crushbite', name: 'Crushing bite', tier: 4, cost: 450, bite: 4, soft: 1.1, med: 1.1, hard: 1.05, very: 1, feat: 'crush' },
+  { id: 'tailbash', name: 'Tail bash', tier: 4, cost: 350, bite: 4, soft: 1.3, med: 0.9, hard: 0.8, very: 0.75, feat: 'club' },
+  { id: 'axeclaws', name: 'Axe-blade claws', tier: 4, cost: 450, bite: 4, soft: 1.2, med: 1.2, hard: 1.1, very: 0.95, feat: 'axe' },
+  { id: 'sawnout', name: 'Serrated saw snout', tier: 4, cost: 450, bite: 3, soft: 1.15, med: 1.2, hard: 1.15, very: 1, feat: 'saw' },
+  { id: 'scythe', name: 'Mantis scythe', tier: 4, cost: 450, bite: 5, soft: 1.25, med: 1.05, hard: 0.95, very: 0.85, feat: 'blade' },
+  { id: 'gouge', name: 'Horn gouge', tier: 4, cost: 400, bite: 3, soft: 1.1, med: 1.15, hard: 1.05, very: 0.9, feat: 'horn' },
+  { id: 'ram', name: 'Body ram', tier: 4, cost: 350, bite: 3, soft: 1.2, med: 1, hard: 0.9, very: 0.85, feat: 'ram' },
+  { id: 'antler', name: 'Stag antler rake', tier: 4, cost: 400, bite: 3, soft: 1.3, med: 1.1, hard: 0.95, very: 0.88, feat: 'rake' },
 ]
 
 export interface Rock {
