@@ -305,7 +305,7 @@ const TREE_GEOS = Object.fromEntries(LAND_TREES.map((id) => [id, TREE_GEO[id]().
 const ROCK_GEOS = { boulder: rockGeo('boulder'), outcrop: rockGeo('outcrop'), pebble: rockGeo('pebble') }
 const PLANT_GEOS = { fern: plantGeo('fern'), grass: plantGeo('grass'), shrub: plantGeo('shrub'), berry: plantGeo('berry') }
 
-function instanced(geo: THREE.BufferGeometry, color: number, cap: number, vertexColors = false): THREE.InstancedMesh {
+function instanced(geo: THREE.BufferGeometry, color: number, cap: number, vertexColors = false, cast = false): THREE.InstancedMesh {
   const mat = new THREE.MeshStandardMaterial({
     color,
     roughness: 0.82,
@@ -315,8 +315,8 @@ function instanced(geo: THREE.BufferGeometry, color: number, cap: number, vertex
   })
   const mesh = new THREE.InstancedMesh(geo, mat, cap)
   mesh.frustumCulled = true
-  mesh.castShadow = false
-  mesh.receiveShadow = false
+  mesh.castShadow = cast
+  mesh.receiveShadow = true
   return mesh
 }
 
@@ -343,7 +343,7 @@ export function buildLandFlora(cx: number, cz: number, quality: 'high' | 'mid' |
   for (const id of LAND_TREES) {
     const spots = scatter.trees.filter((s) => s.kind === id)
     if (!spots.length) continue
-    const mesh = instanced(TREE_GEOS[id], 0xffffff, Math.max(spots.length, 1), true)
+    const mesh = instanced(TREE_GEOS[id], 0xffffff, Math.max(spots.length, 1), true, quality !== 'low')
     let n = 0
     for (const s of spots) n = place(mesh, n, s, 0, 1)
     mesh.count = n
@@ -356,7 +356,7 @@ export function buildLandFlora(cx: number, cz: number, quality: 'high' | 'mid' |
   for (const kind of ['boulder', 'outcrop', 'pebble'] as const) {
     const spots = scatter.rocks.filter((s) => s.kind === kind)
     if (!spots.length) continue
-    const mesh = instanced(ROCK_GEOS[kind], rockColors[kind]!, Math.max(spots.length, 1), true)
+    const mesh = instanced(ROCK_GEOS[kind], rockColors[kind]!, Math.max(spots.length, 1), true, quality !== 'low' && kind !== 'pebble')
     let n = 0
     for (const s of spots) n = place(mesh, n, s, kind === 'outcrop' ? 0.1 : 0.05, 1)
     mesh.count = n

@@ -771,11 +771,18 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     if (!flop && you.load.wings > 0 && input.jump && you.y > ground + 0.25) you.vy = Math.max(you.vy, Math.min(4.5, stats.fly) / box.mass)
     if (flop && you.y <= ground + 0.08) you.vy = Math.max(you.vy, Math.sin(w.time * 9) * 1.1)
     const heat = you.region === 'volcano' && stats.heat <= 0
-    you.air -= dt * (heat ? 1.6 : 1) * gear.dry
-    if (you.y < WATER + 0.35 || !dryUnder) you.air = Math.min(stats.air, you.air + dt * 6)
-    if (you.load.lungs > 0 && you.air <= 0) {
-      you.air = 0
-      hurt(you, 4 * dt * 3)
+    // Lungs or land limbs mean you can breathe on ordinary dry land.
+    // Do not drain the air meter or apply suffocation there. Volcano heat still dries you out.
+    const breatheLand = dryUnder && landOk(you.load, you.spent) && !heat
+    if (breatheLand) {
+      you.air = Math.max(you.air, stats.air)
+    } else {
+      you.air -= dt * (heat ? 1.6 : 1) * gear.dry
+      if (you.y < WATER + 0.35 || !dryUnder) you.air = Math.min(stats.air, you.air + dt * 6)
+      if (you.air <= 0) {
+        you.air = 0
+        if (you.load.lungs > 0 || heat) hurt(you, 4 * dt * 3)
+      }
     }
   }
   if (input.dash && you.recover <= 0) {

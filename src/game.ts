@@ -12,7 +12,7 @@ import { attackVolumes, type HitVol } from '../shared/body'
 import { PREY_TINT, buildCreature, creatureKey, poseCreature, preyInstanceGeo } from './mesh'
 import { ChunkWorld } from './chunks'
 import { buildWater, loadPbr, setTerrainQuality } from './world3d'
-import { BEACH_END, WATER, groundAt, shoreX } from '../shared/terrain'
+import { BEACH_END, WATER, groundAt, shoreX, SEA_END } from '../shared/terrain'
 
 const SAVE = SAVE_KEY
 
@@ -45,6 +45,9 @@ export class Game {
   private decor = new THREE.Group()
   private time = 0
   private sun: THREE.DirectionalLight
+  private hemi: THREE.HemisphereLight
+  private fill: THREE.DirectionalLight
+  private rim: THREE.DirectionalLight
   private waterU = { value: 0 }
   private bubbles: THREE.InstancedMesh | null = null
   private bubbleBases: { x: number; y: number; z: number; s: number }[] = []
@@ -133,25 +136,31 @@ export class Game {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     this.renderer.setPixelRatio(this.pixelCap())
     this.renderer.setClearColor(0x4eb8c4)
-    this.scene.fog = new THREE.Fog(0x6ed4d8, 18, 72)
+    this.scene.fog = new THREE.Fog(0x6ed4d8, 22, 90)
     this.skyBg = skyTexture()
     this.scene.background = this.skyBg
-    this.scene.add(new THREE.HemisphereLight(0xffefd2, 0x2d7a7c, 0.95))
-    this.sun = new THREE.DirectionalLight(0xffeed0, 1.85)
+    this.hemi = new THREE.HemisphereLight(0xfff2dd, 0x3d6a68, 0.88)
+    this.scene.add(this.hemi)
+    this.sun = new THREE.DirectionalLight(0xffeed8, 1.22)
     this.sun.position.set(12, 18, 10)
     this.sun.castShadow = true
     this.sun.shadow.mapSize.set(1024, 1024)
+    this.sun.shadow.bias = -0.00035
+    this.sun.shadow.normalBias = 0.045
     this.sun.shadow.camera.near = 2
-    this.sun.shadow.camera.far = 48
-    this.sun.shadow.camera.left = -18
-    this.sun.shadow.camera.right = 18
-    this.sun.shadow.camera.top = 12
-    this.sun.shadow.camera.bottom = -12
+    this.sun.shadow.camera.far = 72
+    this.sun.shadow.camera.left = -28
+    this.sun.shadow.camera.right = 28
+    this.sun.shadow.camera.top = 20
+    this.sun.shadow.camera.bottom = -20
     this.scene.add(this.sun)
     this.scene.add(this.sun.target)
-    const cool = new THREE.DirectionalLight(0x7ed4d8, 0.46)
-    cool.position.set(-8, 4, -6)
-    this.scene.add(cool)
+    this.fill = new THREE.DirectionalLight(0xb7c8d8, 0.26)
+    this.fill.position.set(-8, 5, -6)
+    this.scene.add(this.fill)
+    this.rim = new THREE.DirectionalLight(0xffe4c4, 0.22)
+    this.rim.position.set(-10, 6, 8)
+    this.scene.add(this.rim)
     this.scene.add(this.decor)
     this.scene.add(this.nodeGroup)
     this.scene.add(this.pieceGroup)
@@ -260,7 +269,7 @@ export class Game {
     for (const x of [176, 188, 202]) {
       const vent = new THREE.Mesh(new THREE.SphereGeometry(0.7, 12, 8), lavaMat)
       vent.scale.set(1, 1.6, 1)
-      vent.position.set(x, 1.5, 0)
+      vent.position.set(x, groundAt(x, 0, 16) + 0.55, 0)
       vent.castShadow = true
       g.add(vent)
     }
@@ -1433,13 +1442,16 @@ export class Game {
     this.nodeGroup.children.forEach((obj, i) => {
       const node = this.world.nodes[i]
       const mesh = obj as THREE.Mesh
-      if (!node || node.amount <= 0) {
+      // Land trees/rocks/plants already have flora meshes. The old 5-lane z
+      // layout drew those harvest nodes as long rows of placeholder gems.
+      const flora = !!node && (node.kind === 'tree' || node.kind === 'rock' || node.kind === 'plant' || node.kind === 'berry') && node.x >= SEA_END - 1
+      if (!node || node.amount <= 0 || flora) {
         mesh.visible = false
         return
       }
       mesh.visible = true
-      const z = ((node.id % 5) - 2) * 1.6
-      const y = groundAt(node.x, z, 8)
+      const z = node.z ?? 0
+      const y = groundAt(node.x, z, 16)
       mesh.position.set(node.x, y + 0.25, z)
       const tint = TREE_TINT[node.mat] ?? ROCK_TINT[node.mat] ?? (node.kind === 'mat' ? 0x6a8a58 : 0x8a8070)
       const mat = mesh.material as THREE.MeshStandardMaterial
@@ -1992,12 +2004,49 @@ export class Game {
         ? new THREE.Color(0x8a4030)
         : zone === 'sea'
           ? new THREE.Color(0x7ee0e2)
-          : new THREE.Color(0xe2d4b4)
-    fog.color.lerp(fogColor, 0.35)
-    fog.near = under ? (this.quality === 'low' ? 5 : 6) : zone === 'volcano' ? 12 : zone === 'sea' ? 22 : 26
-    fog.far = under ? (this.quality === 'low' ? 22 : 28) : zone === 'volcano' ? 80 : zone === 'sea' ? 110 : 140
-    this.renderer.setClearColor(under ? 0x46c8d0 : zone === 'volcano' ? 0x6a382c : zone === 'sea' ? 0x6ed4dc : 0xe2d4b4)
-    this.renderer.toneMappingExposure = zone === 'volcano' ? 1.06 : under ? 1.18 : zone === 'sea' ? 1.22 : 1.24
+          : new THREE.Color(0xd9e2ea)
+    fog.color.lerp(fogColor, 0.28)
+    fog.near = under ? (this.quality === 'low' ? 5 : 6) : zone === 'volcano' ? 14 : zone === 'sea' ? 24 : 36
+    fog.far = under ? (this.quality === 'low' ? 22 : 28) : zone === 'volcano' ? 90 : zone === 'sea' ? 120 : 180
+    this.renderer.setClearColor(under ? 0x46c8d0 : zone === 'volcano' ? 0x6a382c : zone === 'sea' ? 0x6ed4dc : 0xc8d4e0)
+    this.renderer.toneMappingExposure = zone === 'volcano' ? 1.04 : under ? 1.14 : zone === 'sea' ? 1.16 : 1.12
+    if (under) {
+      this.hemi.color.setHex(0xc8f0f4)
+      this.hemi.groundColor.setHex(0x1a5a62)
+      this.hemi.intensity = 0.82
+      this.sun.intensity = 1.02
+      this.fill.color.setHex(0x7ed4d8)
+      this.fill.intensity = 0.36
+      this.rim.intensity = 0.08
+    } else if (zone === 'volcano') {
+      this.hemi.color.setHex(0xffd0b0)
+      this.hemi.groundColor.setHex(0x4a2a22)
+      this.hemi.intensity = 0.7
+      this.sun.intensity = 1.1
+      this.fill.color.setHex(0xc08060)
+      this.fill.intensity = 0.2
+      this.rim.color.setHex(0xffc090)
+      this.rim.intensity = 0.18
+    } else if (zone === 'sea') {
+      this.hemi.color.setHex(0xfff0d8)
+      this.hemi.groundColor.setHex(0x2d7a7c)
+      this.hemi.intensity = 0.86
+      this.sun.intensity = 1.18
+      this.fill.color.setHex(0x9ad4d8)
+      this.fill.intensity = 0.28
+      this.rim.color.setHex(0xffe8d0)
+      this.rim.intensity = 0.16
+    } else {
+      this.hemi.color.setHex(0xfff3e4)
+      this.hemi.groundColor.setHex(0x5a5840)
+      this.hemi.intensity = 0.9
+      this.sun.intensity = 1.18
+      this.fill.color.setHex(0xb8c8d8)
+      this.fill.intensity = 0.22
+      this.rim.color.setHex(0xffe4c0)
+      this.rim.intensity = 0.26
+    }
+    this.rim.position.set(you.x + 10, 7, you.z - 8)
     this.underBg.copy(fog.color)
     this.scene.background = under ? this.underBg : this.skyBg
     this.adaptResolution(dt)

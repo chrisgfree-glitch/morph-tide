@@ -139,9 +139,13 @@ export class ChunkWorld {
       mesh: new THREE.InstancedMesh(geo, mat, cap),
       n: 0,
     }))
+    const jitter = (n: number) => {
+      const t = Math.sin(cx * 127.1 + cz * 311.7 + n * 74.87) * 43758.5453
+      return t - Math.floor(t)
+    }
     for (let c = 0; c < clusters; c++) {
-      let px = cx * CHUNK + ((c * 29 + 8) % CHUNK) - CHUNK * 0.15
-      let pz = cz * CHUNK + ((c * 17 + 5) % CHUNK) - CHUNK * 0.2
+      let px = cx * CHUNK + jitter(c * 2) * CHUNK
+      let pz = cz * CHUNK + jitter(c * 2 + 1) * CHUNK
       if (cx === 0 && cz === 0 && c === 0) { px = 8.2; pz = 1.4 }
       if (cx === 0 && cz === 0 && c === 1) { px = 11.5; pz = -2.1 }
       if (cx === 0 && cz === 0 && c === 2) { px = 5.6; pz = -1.2 }
@@ -180,8 +184,8 @@ export class ChunkWorld {
       bucket.mesh.instanceMatrix.needsUpdate = true
       if (bucket.mesh.instanceColor) bucket.mesh.instanceColor.needsUpdate = true
       bucket.mesh.frustumCulled = true
-      bucket.mesh.castShadow = false
-      bucket.mesh.receiveShadow = false
+      bucket.mesh.castShadow = this.quality !== 'low'
+      bucket.mesh.receiveShadow = true
       this.group.add(bucket.mesh)
       this.rocks.push(bucket.mesh)
     }
@@ -306,7 +310,7 @@ export class ChunkWorld {
 }
 
 function rockMaterial(): THREE.MeshStandardMaterial {
-  const mat = new THREE.MeshStandardMaterial({ color: 0xd5deca, roughness: 0.58, metalness: 0, emissive: 0x4a5c38, emissiveIntensity: 0.38 })
+  const mat = new THREE.MeshStandardMaterial({ color: 0xd5deca, roughness: 0.78, metalness: 0, emissive: 0x000000, emissiveIntensity: 0 })
   const loader = new THREE.TextureLoader()
   ;(['rock_color', 'rock_normal', 'rock_rough'] as const).forEach((name, i) => {
     loader.load(`/textures/${name}.webp`, (tex) => {

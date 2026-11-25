@@ -12,7 +12,7 @@ import { applyGameSave, encodeGameSave, parseGameSave, serializeGameSave } from 
 import { BTN, deadzone, readPad, type PadLike } from '../shared/pad'
 import { canPlace, placePiece, refundPiece } from '../shared/build'
 import { bodyBreakPower, cellSeconds, chopSeconds, compute, tierOf } from '../shared/rules'
-import { BEACH_END, LAND_HEIGHT, SEA_END, WATER, isDryLand, shoreX, terrainHeight, groundAt } from '../shared/terrain'
+import { BEACH_END, LAND_HEIGHT, SEA_END, WATER, VOLCANO_X, isDryLand, shoreX, terrainHeight, groundAt } from '../shared/terrain'
 import { trunkRadius } from '../shared/landcover'
 
 function t7() {
@@ -690,6 +690,49 @@ console.log('all checks ok')
   if (!isDryLand(you.x, you.z)) throw new Error('walker should be on dry land')
   console.log('landOk walker climbs the beach onto the raised plateau')
 }
+
+{
+  const w = createWorld()
+  const you = playerOf(w)
+  you.ep = 4000
+  const lungs = applyMorphBuy(you, 'lungs')
+  if (!lungs.ok) throw new Error(`lungs for the dry-land walk: ${'reason' in lungs ? lungs.reason : ''}`)
+  const legs = applyMorphBuy(you, 'sallegs', { confirm: true })
+  if (!legs.ok) throw new Error(`salamander legs for the dry-land walk: ${'reason' in legs ? legs.reason : ''}`)
+  if (!landOk(you.load, you.spent)) throw new Error('lungs and legs should allow land')
+  for (const e of w.ents) {
+    if (e.id === you.id) continue
+    e.alive = false
+    e.hp = 0
+  }
+  w.raiders = []
+  const idle = { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, dash: false, horn: false, forward: 0, dive: false }
+  const mid = (BEACH_END + VOLCANO_X) / 2
+  you.x = mid
+  you.z = 0
+  you.y = groundAt(mid, 0, 16) + 0.2
+  you.vx = 0
+  you.vy = 0
+  you.vz = 0
+  you.yaw = 0
+  const hp0 = you.hp
+  const air0 = you.air
+  // 66 seconds of walking back and forth on the plateau, staying short of the volcano.
+  for (let i = 0; i < 66 * 30; i++) {
+    if (you.x > VOLCANO_X - 8) you.yaw = Math.PI
+    else if (you.x < BEACH_END + 4) you.yaw = 0
+    step(w, 1 / 30, { ...idle, forward: 1 })
+    if (!you.alive || you.hp <= 0) {
+      throw new Error(`lunged and legged walker died on empty land after ${(i / 30).toFixed(1)}s (hp ${you.hp}, air ${you.air.toFixed(2)}, x ${you.x.toFixed(1)})`)
+    }
+  }
+  if (!isDryLand(you.x, you.z)) throw new Error('the 60s walk should stay on dry land')
+  if (you.x >= VOLCANO_X) throw new Error(`the 60s walk should stay off the volcano, x ${you.x}`)
+  if (you.hp < hp0 - 0.05) throw new Error(`empty-land walk should not drain HP, ${hp0} -> ${you.hp}`)
+  if (you.air + 0.05 < air0 && you.air < 8) throw new Error(`lungs should keep air up on land, air ${air0} -> ${you.air}`)
+  console.log('lunged and legged creature walks 66s on empty land without dying')
+}
+
 
 {
   const w = createWorld()
