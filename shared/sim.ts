@@ -4,7 +4,7 @@ import { digTick, fullColumn, tubeColumn, ventColumn, type Column } from './dig'
 import type { Piece } from './build'
 import { attackVolumes, bodyBox, mouthHit, volumeHits, youngBite } from './body'
 import { CHUNK, WATER, WORLD_Z, carve, fill, groundAt } from './terrain'
-import { buySkin, buySpec, canDig, cellSeconds, chopSeconds, compute, defenseCap, gemChance, landOk, purchase, pvpFactor, tierOf, type Buy, type Progress } from './rules'
+import { bossReady, buySkin, buySpec, canDig, cellSeconds, chopSeconds, compute, defenseCap, gemChance, landOk, purchase, pvpFactor, tierOf, type Buy, type Progress } from './rules'
 import { agility, ashoreNeed, incomingMissChance, morphFx, morphOf, tryBuy, type BuyResult } from './evolve'
 import { createSpawners, kindById, mulberry32, seedSpawners, stepSpawners, type SpawnRequest, type Spawner } from './prey'
 import { createHealPlants, stepHealPlants, tryEatPlant, type HealPlant } from './plants'
@@ -436,7 +436,7 @@ function stepCraftables(w: World, dt: number, ev: Evt[], you: Ent): void {
 }
 
 
-export const BOSS_X = 142
+export const BOSS_X = 58
 export const BOSS_Z = 0
 
 function spawnColossus(w: World, ev: Evt[], announce: boolean): void {
@@ -448,11 +448,11 @@ function spawnColossus(w: World, ev: Evt[], announce: boolean): void {
   load.legs = 6
   load.feet = 'claw'
   load.lungs = 1
-  w.ents.push(make({ id: w.nextId++, kind: 'boss', name: 'Strand Colossus', species: 'boss', x: BOSS_X, y: 1.4, z: BOSS_Z, region: 'land', spent: 140, load, bias: 80, maxHp: 170 }))
+  w.ents.push(make({ id: w.nextId++, kind: 'boss', name: 'Strand Colossus', species: 'boss', x: BOSS_X, y: 2.4, z: BOSS_Z, region: 'sea', spent: 140, load, bias: 80, maxHp: 170 }))
   if (announce) {
-    w.banner = 'The Strand Colossus waits inland.'
+    w.banner = 'The Strand Colossus waits in the shallows by the first shore.'
     w.bannerT = 4
-    ev.push({ t: 'note', x: BOSS_X, y: 2, text: 'The Strand Colossus waits inland' })
+    ev.push({ t: 'note', x: BOSS_X, y: 2, text: 'The Strand Colossus waits in the shallows' })
   }
 }
 
@@ -460,7 +460,7 @@ function unlockBoss(w: World, ev: Evt[], you: Ent): void {
   if (w.bossUnlocked) return
   w.bossUnlocked = true
   spawnColossus(w, ev, false)
-  w.banner = 'Boss unlocked — follow the marker inland to the Strand Colossus.'
+  w.banner = 'Boss unlocked — the Strand Colossus waits in the shallows by the first shore. Follow the marker.'
   w.bannerT = 7
   ev.push({ t: 'boss-unlock', x: you.x, y: you.y, text: 'Boss unlocked' })
 }
@@ -670,8 +670,6 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
       ev.push({ t: 'note', x: you.x, y: you.y, text: 'The shore is closed until you can breathe on land.' })
     }
     you.x = Math.min(you.x, 66)
-  } else if (!w.bossUnlocked) {
-    unlockBoss(w, ev, you)
   }
   const submerged = you.x < 68 && you.y < WATER
   const drag = (0.85 + box.mass * 0.5 + you.load.fin * 0.14) / (you.slow > 0 ? 0.7 : 1)
@@ -789,15 +787,6 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     you.x = Math.min(you.x, 66)
     if (you.x >= 66) you.vx = Math.min(you.vx, 0)
   }
-  const colossus = w.ents.find((e) => e.kind === 'boss' && e.alive)
-  if (colossus && you.x > colossus.x + 2 && you.x < colossus.x + 20) {
-    you.x = colossus.x + 2
-    you.vx = Math.min(you.vx, 0)
-    if (w.bannerT <= 0.4) {
-      w.banner = 'The Strand Colossus bars the inland.'
-      w.bannerT = 2
-    }
-  }
   you.region = regionAt(you.x)
   you.biteCd = Math.max(0, you.biteCd - dt)
   you.biteT = Math.max(0, you.biteT - dt)
@@ -883,7 +872,8 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     you.biteCd = 0.04
     const aim = nearestInCone(w, you)
     const bossUp = w.ents.find((e) => e.kind === 'boss' && e.alive)
-    const huntAssist = !!(aim && !(bossUp && you.x >= 60 && aim.kind !== 'boss' && !input.bite))
+    const nearBoss = !!(bossUp && Math.hypot((bossUp.x - you.x), (bossUp.z ?? 0) - you.z) < 48)
+    const huntAssist = !!(aim && !(nearBoss && aim.kind !== 'boss' && !input.bite))
     if (aim && huntAssist) {
       const young = you.kind === 'player' && youngBite(you.load, you.spent)
       const dx = aim.x - you.x
@@ -953,8 +943,7 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
       ev.push({ t: 'down', x: you.x, y: you.y, text: 'The body fails' })
     }
   }
-  if (landOk(you.load, you.spent) && !w.bossUnlocked) unlockBoss(w, ev, you)
-  if (you.x > 120 && !w.ents.some((e) => e.kind === 'boss') && !w.won) spawnColossus(w, ev, true)
+  if (bossReady(you.load, you.spent) && !w.bossUnlocked) unlockBoss(w, ev, you)
   const boss = w.ents.find((e) => e.kind === 'boss')
   if (boss && !boss.alive && !w.gateOpen) {
     w.gateOpen = true
@@ -1165,7 +1154,7 @@ function npcThink(w: World, dt: number, ev: Evt[]): void {
       e.yaw += e.wdir * dt * 0.45
       e.x += Math.cos(e.yaw) * 1.1 * dt
       e.z += Math.sin(e.yaw) * 1.1 * dt
-      if (e.region === 'sea') e.x = Math.max(4, Math.min(64, e.x))
+      if (e.region === 'sea') e.x = Math.max(4, Math.min(e.kind === 'boss' ? 64 : 64, e.x))
       if (e.region === 'land') e.x = Math.max(70, Math.min(160, e.x))
       if (e.region === 'volcano') e.x = Math.max(170, Math.min(208, e.x))
       e.z = Math.max(-WORLD_Z + 2, Math.min(WORLD_Z - 2, e.z))
@@ -1277,7 +1266,7 @@ function npcThink(w: World, dt: number, ev: Evt[]): void {
     const floor = groundAt(e.x, e.z, e.y)
     e.y = e.region === 'sea' ? Math.min(WATER - 0.6, Math.max(floor + 0.8, e.y)) : floor + 0.15
     e.z = Math.max(-WORLD_Z + 2, Math.min(WORLD_Z - 2, e.z))
-    if (e.region === 'sea') e.x = Math.max(4, Math.min(60, e.x))
+    if (e.region === 'sea') e.x = Math.max(4, Math.min(e.kind === 'boss' ? 64 : 60, e.x))
     if (e.region === 'land') e.x = Math.max(70, Math.min(160, e.x))
     if (e.region === 'volcano') e.x = Math.max(170, Math.min(208, e.x))
   }

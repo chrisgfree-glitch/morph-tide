@@ -6,7 +6,7 @@ import { SAVE_KEY, applyGameSave, encodeGameSave, parseGameSave, serializeGameSa
 import { PIECES, canPlace, costLine, nearestPiece, pieceById, placePiece, refundPiece } from '../shared/build'
 import { EXTRA_REAR, agility, ashoreNeed, canGoAshore, equippedLabel, morphFx, morphOf, partsIn, switchBranch, type Category } from '../shared/evolve'
 import { RECIPES, canCraft } from '../shared/craft'
-import { canDig, compute, fishGoal, growFish, tierOf } from '../shared/rules'
+import { BOSS_ATTACK, attackPower, bossMeterLine, bossReady, canDig, compute, fishGoal, growFish, tierOf } from '../shared/rules'
 import { audio } from './audio'
 import { attackVolumes, type HitVol } from '../shared/body'
 import { PREY_TINT, buildCreature, creatureKey, poseCreature, preyInstanceGeo } from './mesh'
@@ -1136,10 +1136,19 @@ export class Game {
     if (ashoreEl) {
       const ok = canGoAshore(you.load)
       ashoreEl.textContent = ok
-        ? 'Ashore: ready. Follow the marker inland to the Strand Colossus.'
+        ? 'Ashore: ready. You can walk inland past the first shore.'
         : 'Ashore: need Lungs (this tab) or octopus land limbs (Webbed / Salamander Legs).'
       ashoreEl.classList.toggle('ready', ok)
       ashoreEl.classList.toggle('need', !ok)
+    }
+    const bossEl = document.getElementById('evo-boss')
+    if (bossEl) {
+      const ready = bossReady(you.load, you.spent)
+      bossEl.textContent = ready
+        ? 'Boss unlocked — follow the marker to the Strand Colossus in the shallows.'
+        : bossMeterLine(you.load, you.spent)
+      bossEl.classList.toggle('ready', ready)
+      bossEl.classList.toggle('need', !ready)
     }
     document.getElementById('evo-fish')?.classList.toggle('on', morph.branch === 'fish')
     document.getElementById('evo-octo')?.classList.toggle('on', morph.branch === 'octopus')
@@ -1804,7 +1813,7 @@ export class Game {
     if (bite || this.lockId) {
       const aim = lock ?? nearestInCone(this.world, you)
       const bossUp = this.world.ents.find((e) => e.kind === 'boss' && e.alive)
-      const ignoreSeaward = !!(bossUp && you.x >= 60 && aim && aim.kind !== 'boss' && !this.lockId)
+      const ignoreSeaward = !!(bossUp && aim && aim.kind !== 'boss' && !this.lockId && Math.hypot(bossUp.x - you.x, (bossUp.z ?? 0) - you.z) < 48)
       if (aim && !ignoreSeaward) {
         const adx = aim.x - you.x
         const adz = aim.z - you.z
@@ -2305,6 +2314,29 @@ export class Game {
   }
 
 
+
+  private updateBossMeter(): void {
+    const el = document.getElementById('boss-meter')
+    const label = document.getElementById('boss-meter-label')
+    const fill = document.getElementById('boss-meter-fill')
+    if (!el) return
+    if (!this.playing || this.evoOpen || this.pauseOpen || this.selectOpen || this.mapOpen) {
+      el.hidden = true
+      return
+    }
+    const you = playerOf(this.world)
+    const ready = this.world.bossUnlocked || bossReady(you.load, you.spent)
+    el.hidden = false
+    el.classList.toggle('ready', ready)
+    if (label) label.textContent = ready && this.world.bossUnlocked
+      ? 'Boss unlocked — follow the marker'
+      : bossMeterLine(you.load, you.spent)
+    if (fill) {
+      const atk = attackPower(you.load, you.spent)
+      fill.style.width = `${Math.max(0, Math.min(100, (atk / BOSS_ATTACK) * 100))}%`
+    }
+  }
+
   private updateBossMarker(): void {
     const el = document.getElementById('boss-mark')
     const arrow = document.getElementById('boss-mark-arrow')
@@ -2318,7 +2350,7 @@ export class Game {
     const you = playerOf(w)
     const living = w.ents.find((e) => e.kind === 'boss' && e.alive)
     const fallen = w.ents.some((e) => e.kind === 'boss' && !e.alive) || w.gateOpen || w.won
-    const unlocked = w.bossUnlocked || canGoAshore(you.load)
+    const unlocked = w.bossUnlocked
     if (!unlocked || fallen || !living && w.bossUnlocked === false) {
       el.hidden = true
       return
@@ -2339,7 +2371,7 @@ export class Game {
     while (ang > Math.PI) ang -= Math.PI * 2
     while (ang < -Math.PI) ang += Math.PI * 2
     if (arrow) arrow.style.transform = `rotate(${ang}rad)`
-    if (label) label.textContent = `Boss unlocked · ${Math.round(dist)} inland`
+    if (label) label.textContent = `Boss unlocked · ${Math.round(dist)}`
   }
 
   private hud(): void {
@@ -2373,7 +2405,7 @@ export class Game {
     }
     if (!this.shoreTold && canGoAshore(you.load) && you.x >= 60) {
       this.shoreTold = true
-      this.world.banner = 'The first shore. Follow the marker inland to the Strand Colossus.'
+      this.world.banner = 'The first shore. Lungs or land limbs let you walk inland.'
       this.world.bannerT = 8
     }
     const digBtn = document.getElementById('t-act') as HTMLButtonElement | null
@@ -2388,6 +2420,7 @@ export class Game {
       }
     }
     set('banner', this.world.bannerT > 0 ? this.world.banner : '')
+    this.updateBossMeter()
     this.updateBossMarker()
     const lockEl = document.getElementById('lock-tag')
     const lockedPrey = this.world.ents.find((e) => e.id === this.lockId && e.alive)
@@ -2486,20 +2519,17 @@ export function mount(): Game | null {
 }
 
 function earlyGoal(w: World, you: Ent, fallback: string): string {
-  if (!canGoAshore(you.load)) {
-    if (you.x >= 58 || you.ep >= 10) {
-      return you.ep < 10
-        ? 'Earn 10 EP, then buy Lungs in Evolve (Select) to go ashore'
-        : 'Buy Lungs in Evolve (Select) — or octopus land limbs — to go ashore'
-    }
-  } else {
-    const boss = w.ents.find((e) => e.kind === 'boss')
-    if (w.bossUnlocked && boss?.alive) {
-      const dist = Math.max(0, Math.round(Math.hypot(boss.x - you.x, (boss.z ?? 0) - you.z)))
-      return dist > 8 ? `Boss unlocked — follow the marker inland (${dist})` : 'Fight the Strand Colossus'
-    }
-    if (w.bossUnlocked && !boss?.alive) return w.gateOpen ? 'The inland is open. Keep growing.' : 'The Strand Colossus has fallen'
-    if (you.x < 66) return 'Go ashore and follow the marker inland to the first boss'
+  const boss = w.ents.find((e) => e.kind === 'boss')
+  if (!w.bossUnlocked) return bossMeterLine(you.load, you.spent)
+  if (boss?.alive) {
+    const dist = Math.max(0, Math.round(Math.hypot(boss.x - you.x, (boss.z ?? 0) - you.z)))
+    return dist > 8 ? `Boss unlocked — follow the marker to the shallows (${dist})` : 'Fight the Strand Colossus'
+  }
+  if (!boss?.alive) return w.gateOpen ? 'The Strand Colossus has fallen. Keep growing.' : 'The Strand Colossus has fallen'
+  if (!canGoAshore(you.load) && you.x >= 58) {
+    return you.ep < 10
+      ? 'Earn 10 EP, then buy Lungs in Evolve (Select) to go ashore'
+      : 'Buy Lungs in Evolve (Select) — or octopus land limbs — to go ashore'
   }
   const guppy = you.spent < 12 && you.load.legs === 0 && you.load.size <= 0.55
   if (guppy && w.eats < 5) return `Eat 5 fish (${w.eats}/5)`

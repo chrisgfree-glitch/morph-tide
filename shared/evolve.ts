@@ -26,7 +26,7 @@ export interface Morph {
   extraRear: number
   tail: string
   limb: string
-  /** Shared — lets any branch go ashore and reach the first boss. */
+  /** Shared — lets any branch go ashore. */
   lungs: string
   /** Full EP actually paid, keyed like "skin:scales" or "horn:lance:2". */
   paid: Record<string, number>
@@ -645,7 +645,7 @@ export function tryBuy(you: Progress, id: string, opts: { confirm?: boolean; lev
     spend(you, `lungs:${def.id}`, def.cost)
     morph.lungs = def.id
     you.load.lungs = Math.max(you.load.lungs, 1)
-    return { ok: true, refund: 0, message: 'Lungs grown. You can go ashore — the first boss is unlocked inland.' }
+    return { ok: true, refund: 0, message: 'Lungs grown. You can go ashore.' }
   }
   if (def.category === 'limb') {
     if (morph.extraRear > 0) {

@@ -1,5 +1,5 @@
 import type { Loadout, Pick, Step } from './catalog'
-import { applyMorphStats, canGoAshore } from './evolve'
+import { applyMorphStats, canGoAshore, hornSharpness, partById } from './evolve'
 import {
   ARM_COST,
   ARM_TYPES,
@@ -223,6 +223,33 @@ export function compute(load: Loadout, spent: number): Stats {
   s.fly = Math.max(0, s.fly)
   s.vision = Math.max(6, s.vision)
   return s
+}
+
+
+/** Combined bite + horn sharpness. A normal 15–20 minute build reaches 10 via a bite head, Spiny Fin, a horn, or Spiny Armor plus a small extra. */
+export const BOSS_ATTACK = 10
+
+export function attackPower(load: Loadout, spent: number): number {
+  const s = compute(load, spent)
+  const morph = load.morph
+  if (!morph?.horn) return s.bite
+  return s.bite + hornSharpness(partById(morph.horn), morph.hornLv)
+}
+
+export function bossReady(load: Loadout, spent: number): boolean {
+  return attackPower(load, spent) >= BOSS_ATTACK - 1e-9
+}
+
+export function formatAttack(n: number): string {
+  const v = Math.round(n * 10) / 10
+  return Number.isInteger(v) ? String(v) : v.toFixed(1)
+}
+
+/** Shown in the HUD and Evolve menu until the first boss is unlocked. */
+export function bossMeterLine(load: Loadout, spent: number): string {
+  const atk = attackPower(load, spent)
+  if (atk >= BOSS_ATTACK - 1e-9) return `Attack ${formatAttack(atk)} / ${BOSS_ATTACK} — boss unlocked`
+  return `Attack ${formatAttack(atk)} / ${BOSS_ATTACK} to face the boss`
 }
 
 export function canDig(load: Loadout, spent: number): boolean {

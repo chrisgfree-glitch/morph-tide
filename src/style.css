@@ -401,3 +401,36 @@ input { background: #1a2a30; color: #e7e0d4; border: 2px solid #d7cbb8; padding:
 .evo-ashore { font-size: 13px; margin: 0; opacity: 0.95; }
 .evo-ashore.ready { color: #9dffb0; }
 .evo-ashore.need { color: #ffe08a; }
+
+#boss-meter {
+  margin: 2px 0 0;
+  max-width: 280px;
+  pointer-events: none;
+  text-shadow: 0 1px 4px #0a2028;
+}
+#boss-meter[hidden] { display: none !important; }
+#boss-meter-label {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: #f4ead4;
+}
+#boss-meter-bar {
+  margin-top: 3px;
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(12, 32, 38, 0.55);
+  overflow: hidden;
+}
+#boss-meter-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 99px;
+  background: #ffe08a;
+}
+#boss-meter.ready #boss-meter-label { color: #9dffb0; }
+#boss-meter.ready #boss-meter-fill { background: #9dffb0; width: 100%; }
+.evo-boss { font-size: 13px; margin: 0; }
+.evo-boss.need { color: #ffe08a; }
+.evo-boss.ready { color: #9dffb0; }

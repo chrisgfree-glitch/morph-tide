@@ -4,7 +4,7 @@ import { createSpawners, seedSpawners, stepSpawners, mulberry32 } from '../share
 import { createHealPlants, tryEatPlant, stepHealPlants } from '../shared/plants'
 import { LAND_TREES, LAND_TREE_NAMES } from '../shared/landcover'
 import { RECIPES, canCraft, spendCraft, gearFx, forageDrop } from '../shared/craft'
-import { landOk } from '../shared/rules'
+import { landOk, attackPower, bossReady, bossMeterLine, BOSS_ATTACK } from '../shared/rules'
 import { columnSeconds } from '../shared/dig'
 import { attackVolumes, bodyScale, volumeHits, youngBite } from '../shared/body'
 import { applyMorphBuy, applyWorldSnapshot, createWorld, playerOf, snapshotWorld, step } from '../shared/sim'
@@ -107,23 +107,26 @@ if (!volumeHits(vols, vols[0]!.x, vols[0]!.y, vols[0]!.z, 0.05)) throw new Error
 
 const gate = createWorld()
 const hero = playerOf(gate)
-hero.x = 130
-hero.y = 1.2
+hero.ep = 20
 hero.hp = 400
 hero.maxHp = 400
 hero.air = 400
-hero.spent = 200
-hero.load.lungs = 1
-hero.load.legs = 4
-hero.load.feet = 'claw'
-for (let i = 0; i < 20; i++) step(gate, 0.25, { ax: 1, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
+hero.x = 40
+hero.y = 2.4
+if (bossReady(hero.load, hero.spent)) throw new Error('a starter guppy should not yet face the boss')
+const horn = applyMorphBuy(hero, 'coral')
+if (!horn.ok) throw new Error(`coral spike should buy: ${horn.reason}`)
+if (!bossReady(hero.load, hero.spent)) throw new Error(`coral spike should reach Attack ${BOSS_ATTACK}, got ${attackPower(hero.load, hero.spent)}`)
+step(gate, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 0 })
 const boss = gate.ents.find((e) => e.kind === 'boss')
-if (!boss) throw new Error('colossus did not spawn past 128')
+if (!boss) throw new Error('colossus should spawn in the shallows once Attack is high enough')
+if (Math.abs(boss.x - 58) > 2) throw new Error(`colossus should wait near the first shore, got x=${boss.x}`)
+if (boss.region !== 'sea') throw new Error('level 1 boss should be in the shallows, not inland')
 boss.alive = false
 boss.hp = 0
 step(gate, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false })
 if (gate.won) throw new Error('defeating the colossus should open a gate, not win')
-if (!gate.gateOpen) throw new Error('colossus death should open the inland gate')
+if (!gate.gateOpen) throw new Error('colossus death should set gateOpen')
 
 
 const site = createWorld()
@@ -512,64 +515,83 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
   step(w, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
   if (you.x > 66) throw new Error(`shore must pin at 66 without lungs, got ${you.x}`)
   if (!w.shoreWarned || !/lungs|land limbs/i.test(w.banner)) throw new Error(`shore should say lungs or land limbs, got "${w.banner}"`)
+  if (w.bossUnlocked || w.ents.some((e) => e.kind === 'boss')) throw new Error('lungs/land must not be the level 1 boss gate')
   you.ep = 20
   const buy = applyMorphBuy(you, 'lungs')
   if (!buy.ok) throw new Error(`lungs should be buyable: ${buy.reason}`)
   if (!landOk(you.load, 0)) throw new Error('lungs must allow land without a tier gate')
   step(w, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 0 })
-  if (!w.bossUnlocked) throw new Error('buying lungs should unlock the first boss')
-  if (!w.ents.some((e) => e.kind === 'boss')) throw new Error('Colossus should spawn as soon as the boss is unlocked, not only after x>128')
-  if (!/Boss unlocked/i.test(w.banner)) throw new Error(`should announce Boss unlocked, got "${w.banner}"`)
+  if (w.bossUnlocked) throw new Error('buying lungs must not unlock the first boss')
   you.x = 70
   step(w, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
   if (you.x < 70) throw new Error('player with lungs must be able to leave the water')
-  you.x = 130
-  you.y = 1.2
-  step(w, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
-  if (you.x <= 128) throw new Error(`normal lungs playthrough should reach x>128, got ${you.x}`)
-  const colossus = w.ents.find((e) => e.kind === 'boss' && e.alive)
-  if (!colossus) throw new Error('Strand Colossus should be waiting inland after a lungs playthrough')
-  if (Math.abs(colossus.x - 142) > 1) throw new Error('Colossus should wait near x=142')
-  console.log('lungs unlock land, Boss unlocked, and a playthrough reaches x>128')
+  console.log('lungs still unlock land, without gating the first boss')
 }
 
 {
   const w = createWorld()
   const you = playerOf(w)
-  you.ep = 16
-  you.x = 70
-  you.y = 1.2
-  const buy = applyMorphBuy(you, 'lungs')
-  if (!buy.ok) throw new Error(`lungs buy failed: ${buy.reason}`)
+  you.x = 20
+  you.y = 3
+  if (bossReady(you.load, you.spent)) throw new Error('starter attack should be below the boss threshold')
+  if (!/Attack .+ \/ 10 to face the boss/.test(bossMeterLine(you.load, you.spent))) {
+    throw new Error(`meter should say Attack X / 10 to face the boss, got "${bossMeterLine(you.load, you.spent)}"`)
+  }
+  you.ep = 20
+  const fin = applyMorphBuy(you, 'spinyfin-side', { confirm: true })
+  if (!fin.ok) throw new Error(`spiny fin should buy: ${fin.reason}`)
+  // 6 + 3.5 = 9.5, just short of 10
+  if (bossReady(you.load, you.spent)) throw new Error(`Spiny Fin alone should sit just under the threshold, got ${attackPower(you.load, you.spent)}`)
+  you.ep = Math.max(you.ep, 12)
+  const horn = applyMorphBuy(you, 'nub')
+  if (!horn.ok) throw new Error(`bone nub should buy: ${horn.reason}`)
+  if (attackPower(you.load, you.spent) < BOSS_ATTACK) throw new Error(`Spiny Fin + Bone Nub should reach Attack ${BOSS_ATTACK}, got ${attackPower(you.load, you.spent)}`)
   step(w, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 0 })
+  if (!w.bossUnlocked) throw new Error('reaching the attack threshold should unlock the first boss')
+  if (!/Boss unlocked/i.test(w.banner)) throw new Error(`should announce Boss unlocked, got "${w.banner}"`)
   const boss = w.ents.find((e) => e.kind === 'boss' && e.alive)
-  if (!boss) throw new Error('boss should be present for melee check')
-  you.x = boss.x - 2
+  if (!boss) throw new Error('Colossus should spawn as soon as Attack is high enough')
+  if (boss.region !== 'sea' || boss.x > 64) throw new Error(`boss should stand in the shallows near the first shore, got x=${boss.x} region=${boss.region}`)
+  // both branches can reach it without landOk
+  if (landOk(you.load, you.spent)) throw new Error('fish-branch attack build should reach the boss without going ashore')
+  you.x = boss.x - 4
   you.y = boss.y
   you.z = boss.z
-  you.yaw = 0
-  step(w, 0.16, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 0 })
-  if (you.x < boss.x - 3) throw new Error(`player should be able to step into melee, got x=${you.x} vs boss ${boss.x}`)
+  step(w, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
+  if (you.x > 66) throw new Error('reaching the shallows boss must not require crossing the land pin')
   const hp0 = boss.hp
   you.x = boss.x - 1.6
   you.y = boss.y
   you.z = boss.z
   you.yaw = 0
-  you.biteCd = 0
-  you.windup = 0
-  you.recover = 0
-  you.stun = 0
   for (let i = 0; i < 8; i++) {
     you.biteCd = 0
     you.windup = 0
     you.recover = 0
+    you.stun = 0
     step(w, 0.12, { ax: 0, ay: 0, jump: false, bite: true, dig: false, use: false, ink: false, forward: 0 })
   }
-  if (boss.hp >= hp0) throw new Error(`guppy should be able to bite the Colossus in melee, hp ${hp0} -> ${boss.hp}`)
-  you.x = boss.x + 6
-  step(w, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
-  if (you.x > boss.x + 2.05) throw new Error(`living Colossus should still bar the inland, got x=${you.x}`)
-  console.log('Colossus is fightable in melee and still bars passage inland')
+  if (boss.hp >= hp0) throw new Error(`should be able to bite the Colossus in the shallows, hp ${hp0} -> ${boss.hp}`)
+  console.log('attack threshold unlocks the shallows Colossus for a normal fish build')
+}
+
+{
+  const w = createWorld()
+  const you = playerOf(w)
+  you.ep = 40
+  you.x = 30
+  you.y = 3
+  const head = applyMorphBuy(you, 'hornedfrog', { confirm: true })
+  if (!head.ok) throw new Error(`horned frog should buy: ${head.reason}`)
+  you.ep = Math.max(you.ep, 12)
+  const horn = applyMorphBuy(you, 'nub')
+  if (!horn.ok) throw new Error(`nub after horned frog: ${horn.reason}`)
+  if (!bossReady(you.load, you.spent)) throw new Error(`octopus bite head + horn should reach Attack ${BOSS_ATTACK}, got ${attackPower(you.load, you.spent)}`)
+  step(w, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 0 })
+  const boss = w.ents.find((e) => e.kind === 'boss' && e.alive)
+  if (!boss || boss.region !== 'sea') throw new Error('octopus branch should also fight the Colossus in the shallows')
+  if (landOk(you.load, you.spent)) throw new Error('octopus head/horn should reach the boss before taking land limbs')
+  console.log('octopus branch also unlocks the shallows Colossus by attack')
 }
 
 
