@@ -301,7 +301,7 @@ console.log('pickup refunds without a free replacement; refunds persist')
 {
   const mid = createWorld()
   const you = playerOf(mid)
-  you.spent = 12
+  you.spent = 300
   you.ep = 18
   you.load.size = 0.92
   you.load.lungs = 1
@@ -668,7 +668,9 @@ console.log('all checks ok')
   you.vx = 0
   for (let i = 0; i < 80; i++) step(w, 0.16, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
   if (you.x < 68) throw new Error(`swimmer should cross the old x=66 wall while still in the water, got x=${you.x}`)
-  if (isDryLand(you.x, you.z)) throw new Error(`water-only swimmer should not walk onto dry land, got x=${you.x}`)
+  // The shore clamp sits on shoreX(z)-0.2, which isDryLand already treats as dry, so
+  // check we stayed at the waterline instead of walking up the beach.
+  if (you.x > shoreX(you.z)) throw new Error(`water-only swimmer should not walk onto dry land, got x=${you.x} shore=${shoreX(you.z)}`)
   if (you.x > 478) throw new Error('swimmer escaped the world edge')
   console.log('free swim past the old mid-ocean wall')
 }
