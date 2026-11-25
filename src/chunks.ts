@@ -366,7 +366,7 @@ function rockGeo(seed: number): THREE.BufferGeometry {
 }
 
 function kelpBlade(kind: number): THREE.BufferGeometry {
-  const w = kind === 0 ? 0.16 : kind === 1 ? 0.3 : 0.2
+  const w = kind === 0 ? 0.22 : kind === 1 ? 0.36 : 0.26
   const ribbon = (yaw: number) => {
     const geo = new THREE.PlaneGeometry(w, 1, 1, 6)
     geo.translate(0, 0.5, 0)

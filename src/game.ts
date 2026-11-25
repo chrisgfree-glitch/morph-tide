@@ -1,9 +1,10 @@
 import * as THREE from 'three'
 import { ARM_TYPES, BREAKERS, COLOR_NAMES, COLORS, CUTTERS, FEET, FIN_LINE, GEMS, HORNS, JAWS, ROCK_TINT, SKINS, TAIL_LINE, TEETH, TREE_TINT, TIER_SPENT, WING_STYLES, treeById } from '../shared/catalog'
 import { createWorld, nearestInCone, playerOf, step, tryPurchase, type Ent, type Frame, type World } from '../shared/sim'
+import { readPad, type PadLayer } from '../shared/pad'
 import { SAVE_KEY, applyGameSave, encodeGameSave, parseGameSave, serializeGameSave } from '../shared/save'
 import { PIECES, canPlace, costLine, nearestPiece, pieceById, placePiece, refundPiece } from '../shared/build'
-import { fishGoal, growFish, hideStock, tierOf } from '../shared/rules'
+import { canDig, fishGoal, growFish, hideStock, tierOf } from '../shared/rules'
 import { audio } from './audio'
 import { attackVolumes, type HitVol } from '../shared/body'
 import { buildCreature, creatureKey, poseCreature } from './mesh'
@@ -60,6 +61,7 @@ export class Game {
   private mapOffX = 0
   private mapOffZ = 0
   private padOn = false
+  private padHelpOpen = false
   private touchForced = false
   private padPrev: boolean[] = []
   private focusIndex = 0
@@ -88,6 +90,9 @@ export class Game {
   private yawT = 0.4
   private pitchT = 0.05
   private lookId = -1
+  private lookLast = { x: 0, y: 0 }
+  private lookDragT = 0
+  private camDistT = 6.2
   private riseHeld = false
   private diveHeld = false
   private resTick = 0
@@ -221,9 +226,8 @@ export class Game {
     this.camera.fov = wide ? 68 : 58
     this.camera.aspect = aspect
     this.camera.updateProjectionMatrix()
-    const you = playerOf(this.world)
-    const guppy = you.load.size <= 0.5 && you.spent <= 0
-    this.camDist = this.firstPerson ? 0.45 : (wide ? 6.2 : 8) * (guppy ? 0.78 : 1)
+    this.camDistT = this.firstPerson ? 0.45 : (wide ? 6.2 : 8)
+    if (this.firstPerson) this.camDist = 0.45
     const fog = this.scene.fog as THREE.Fog
     fog.near = wide ? 24 : 14
     fog.far = wide ? 70 : 42
@@ -392,6 +396,8 @@ export class Game {
     document.getElementById('pause-resume')?.addEventListener('click', () => this.resumePlay())
     document.getElementById('pause-save')?.addEventListener('click', () => this.manualSave())
     document.getElementById('pause-load')?.addEventListener('click', () => this.manualLoad())
+    document.getElementById('pause-pad')?.addEventListener('click', () => this.togglePadHelp(true))
+    document.getElementById('pad-help-close')?.addEventListener('click', () => this.togglePadHelp(false))
     document.getElementById('quit-save')?.addEventListener('click', () => this.quitToTitle(true))
     document.getElementById('quit-quit')?.addEventListener('click', () => this.quitToTitle(false))
     document.getElementById('quit-cancel')?.addEventListener('click', () => this.toggleQuit(false))
@@ -463,16 +469,27 @@ export class Game {
     }, { passive: false })
     const look = document.getElementById('look')
     look?.addEventListener('pointerdown', (e) => {
-      if (!this.playing) return
+      if (!this.playing || this.selectOpen || this.pauseOpen || this.evoOpen || this.quitOpen || this.mapOpen || this.padHelpOpen) return
+      if ((e.target as HTMLElement | null)?.closest?.('#stick, #arc, #hud, #t-evo, button')) return
       this.lookId = e.pointerId
+      this.lookLast = { x: e.clientX, y: e.clientY }
+      this.lookDragT = 0.55
       look.setPointerCapture(e.pointerId)
     })
     look?.addEventListener('pointermove', (e) => {
       if (e.pointerId !== this.lookId) return
-      this.applyLook(e.movementX, e.movementY, 0.0024)
+      const dx = e.clientX - this.lookLast.x
+      const dy = e.clientY - this.lookLast.y
+      this.lookLast = { x: e.clientX, y: e.clientY }
+      // Prefer yaw (left/right). Use client deltas because movementX is unreliable on touch.
+      this.applyLook(dx, dy * 0.35, 0.008)
+      this.lookDragT = 0.45
     })
     const endLook = (e: PointerEvent) => {
-      if (e.pointerId === this.lookId) this.lookId = -1
+      if (e.pointerId === this.lookId) {
+        this.lookId = -1
+        this.lookDragT = Math.max(this.lookDragT, 0.4)
+      }
     }
     look?.addEventListener('pointerup', endLook)
     look?.addEventListener('pointercancel', endLook)
@@ -734,6 +751,10 @@ export class Game {
 
   /** Close the topmost submenu or Select. Returns true if something closed. */
   closeTopMenu(): boolean {
+    if (this.padHelpOpen) {
+      this.togglePadHelp(false)
+      return true
+    }
     if (this.evoOpen) {
       this.toggleEvo(false)
       if (this.selectOpen) {
@@ -825,6 +846,8 @@ export class Game {
     document.getElementById('map')?.setAttribute('hidden', '')
     document.getElementById('overlay')?.setAttribute('hidden', '')
     document.getElementById('pad-map')?.setAttribute('hidden', '')
+    document.getElementById('pad-help')?.setAttribute('hidden', '')
+    this.padHelpOpen = false
     document.getElementById('save-toast')?.setAttribute('hidden', '')
     this.toastT = 0
     document.getElementById('title')?.removeAttribute('hidden')
@@ -1176,7 +1199,7 @@ export class Game {
     this.punch.ay = ay
   }
 
-  private placeCamera(you: Ent, _dt: number): void {
+  private placeCamera(you: Ent, dt: number): void {
     const aheadX = Math.cos(this.yaw)
     const aheadZ = Math.sin(this.yaw)
     const lock = this.world.ents.find((e) => e.id === this.lockId && e.alive)
@@ -1191,6 +1214,8 @@ export class Game {
       return
     }
     this.camera.near = 0.1
+    const k = 1 - Math.exp(-Math.max(0, dt) * 3.2)
+    this.camDist += (this.camDistT - this.camDist) * k
     const tight = you.biteT > 0 || this.dashT > 0
     const dist = this.camDist * this.zoom * (tight ? 0.62 : 1)
     const height = tight ? 1.15 : 1.7
@@ -1340,6 +1365,19 @@ export class Game {
     const look = document.getElementById('look')
     if (touch) touch.hidden = !show
     if (look) look.hidden = !show
+    this.syncTouchButtons()
+  }
+
+  private syncTouchButtons(): void {
+    if (!this.playing) return
+    const you = playerOf(this.world)
+    const inWater = you.region === 'sea' || you.y < 5.8
+    const dig = document.getElementById('t-act')
+    const rise = document.getElementById('t-up')
+    const dive = document.getElementById('t-dive')
+    if (dig) dig.hidden = !canDig(you.load, you.spent)
+    if (rise) rise.hidden = false
+    if (dive) dive.hidden = !inWater
   }
 
   private revealTouch(): void {
@@ -1350,9 +1388,13 @@ export class Game {
 
   private menuTargets(): HTMLElement[] {
     const pick = (ids: string[]) => ids.map((id) => document.getElementById(id)).filter((el): el is HTMLElement => !!el && !el.hidden)
+    if (this.padHelpOpen) return pick(['pad-help-close'])
     if (this.quitOpen) return pick(['quit-save', 'quit-quit', 'quit-cancel'])
-    if (this.pauseOpen) return pick(['pause-resume', 'pause-save', 'pause-load', 'settings-close', 'set-sens', 'set-invert', 'set-vol', 'set-mute', 'set-quality', 'set-restart'])
-    if (this.evoOpen) return pick(['evo-close'])
+    if (this.pauseOpen) return pick(['pause-resume', 'pause-save', 'pause-load', 'pause-pad', 'settings-close', 'set-sens', 'set-invert', 'set-vol', 'set-mute', 'set-quality', 'set-restart'])
+    if (this.evoOpen) {
+      const body = [...document.querySelectorAll('#evo-body button, #evo-close')].filter((el): el is HTMLElement => el instanceof HTMLElement && !el.hidden && !(el as HTMLButtonElement).disabled)
+      return body
+    }
     if (this.selectOpen) return pick(['select-pause', 'select-evolve', 'select-quit'])
     if (this.mapOpen) return pick(['map-close'])
     if (!this.playing) return pick(['solo'])
@@ -1394,6 +1436,16 @@ export class Game {
     el.click()
   }
 
+  togglePadHelp(force?: boolean): void {
+    this.padHelpOpen = force ?? !this.padHelpOpen
+    const el = document.getElementById('pad-help')
+    if (el) el.hidden = !this.padHelpOpen
+    if (this.padHelpOpen) {
+      this.focusIndex = 0
+      this.markFocus()
+    }
+  }
+
   private pollPad(dt: number): void {
     const pads = navigator.getGamepads?.()
     const pad = pads ? Array.from(pads).find((p) => p && p.connected) ?? null : null
@@ -1404,98 +1456,126 @@ export class Game {
       this.touchForced = false
       this.padPromptT = 2.2
       const prompt = document.getElementById('pad-prompt')
-      if (prompt) prompt.hidden = false
+      if (prompt) {
+        prompt.hidden = false
+        prompt.textContent = 'Controller connected'
+      }
       this.applyTouchVisibility()
     }
     if (!connected && this.padOn) {
       this.padOn = false
       this.touchForced = false
+      this.padPrev = []
+      this.navLatch = false
+      this.padPromptT = 2.2
+      const prompt = document.getElementById('pad-prompt')
+      if (prompt) {
+        prompt.hidden = false
+        prompt.textContent = 'Controller disconnected'
+      }
       this.applyTouchVisibility()
     }
-    if (map) map.hidden = !this.padOn || !this.playing || this.selectOpen || this.pauseOpen || this.quitOpen || this.evoOpen || this.mapOpen
+    if (map) map.hidden = !this.padOn || !this.playing || this.selectOpen || this.pauseOpen || this.quitOpen || this.evoOpen || this.mapOpen || this.padHelpOpen
     this.gp = { lx: 0, ly: 0, rx: 0, ry: 0, attack: false, horn: false, dash: false, dig: false, rise: false, dive: false, sprint: false, use: false }
-    if (!pad) return
-    const pressed = (i: number) => !!pad.buttons[i]?.pressed || (pad.buttons[i]?.value ?? 0) > 0.45
-    const edge = (i: number) => {
-      const now = pressed(i)
-      const was = this.padPrev[i] ?? false
-      this.padPrev[i] = now
-      return now && !was
-    }
-    const lx = pad.axes[0] ?? 0
-    const ly = pad.axes[1] ?? 0
-    const rx = pad.axes[2] ?? 0
-    const ry = pad.axes[3] ?? 0
-    const using = pad.buttons.some((b) => b.pressed || b.value > 0.2) || Math.hypot(lx, ly, rx, ry) > 0.28
-    if (using && this.touchForced) {
+    if (!connected) return
+    let layer: PadLayer = 'play'
+    if (!this.playing) layer = 'title'
+    else if (this.padHelpOpen || this.menuTargets().length && !this.buildMode) layer = 'menu'
+    else if (this.mapOpen) layer = 'map'
+    else if (this.buildMode) layer = 'build'
+    // Pause/select/evo/quit take menu layer even if build is also on.
+    if (this.padHelpOpen || this.selectOpen || this.pauseOpen || this.quitOpen || this.evoOpen) layer = this.playing ? 'menu' : 'title'
+    if (this.mapOpen && layer === 'play') layer = 'map'
+    const read = readPad(pad, this.padPrev, layer, this.navLatch)
+    this.padPrev = read.prev
+    this.navLatch = read.navLatch
+    const f = read.frame
+    if (f.using && this.touchForced) {
       this.touchForced = false
       this.applyTouchVisibility()
     }
-    if (edge(9)) {
-      if (!this.closeTopMenu()) this.toggleSelect(true)
-    }
-    if (edge(8) && !this.selectOpen && !this.pauseOpen && !this.quitOpen) this.toggleMap()
-    const menu = this.menuTargets()
-    if (this.mapOpen && !this.selectOpen && !this.pauseOpen && !this.quitOpen) {
-      this.mapOffX += lx * dt * 36
-      this.mapOffZ += ly * dt * 36
-      if (edge(1)) this.toggleMap(false)
+    if (f.start && this.playing) {
+      if (this.padHelpOpen) this.togglePadHelp(false)
+      if (this.pauseOpen) this.togglePause(false)
+      else {
+        if (this.evoOpen) this.toggleEvo(false)
+        if (this.quitOpen) this.toggleQuit(false)
+        if (this.mapOpen) this.toggleMap(false)
+        if (this.selectOpen) this.toggleSelect(false)
+        this.togglePause(true)
+      }
       return
     }
-    if (menu.length) {
-      const up = edge(12) || (ly < -0.65 && !this.navLatch)
-      const down = edge(13) || (ly > 0.65 && !this.navLatch)
-      this.navLatch = Math.abs(ly) > 0.65
-      if (up) this.moveFocus(-1)
-      if (down) this.moveFocus(1)
+    if (f.view && this.playing) {
+      if (this.padHelpOpen) this.togglePadHelp(false)
+      if (this.selectOpen) this.toggleSelect(false)
+      else {
+        if (this.pauseOpen) this.togglePause(false)
+        if (this.evoOpen) this.toggleEvo(false)
+        if (this.quitOpen) this.toggleQuit(false)
+        if (this.mapOpen) this.toggleMap(false)
+        this.toggleSelect(true)
+      }
+      return
+    }
+    if (layer === 'map') {
+      this.mapOffX += f.lx * dt * 36
+      this.mapOffZ += f.ly * dt * 36
+      if (f.back) this.toggleMap(false)
+      return
+    }
+    if (layer === 'menu' || layer === 'title') {
+      if (f.navUp) this.moveFocus(-1)
+      if (f.navDown) this.moveFocus(1)
       this.sliderWait -= dt
-      if (this.sliderWait <= 0 && (Math.abs(lx) > 0.55 || pressed(14) || pressed(15))) {
-        this.activateFocus(lx < 0 || pressed(14) ? -1 : 1)
+      if (this.sliderWait <= 0 && (f.navLeft || f.navRight)) {
+        this.activateFocus(f.navLeft ? -1 : 1)
         this.sliderWait = 0.16
       }
-      if (edge(0)) this.activateFocus(0)
-      if (edge(1)) this.closeTopMenu()
+      if (f.confirm) this.activateFocus(0)
+      if (f.back) this.closeTopMenu()
       return
     }
-    if (Math.abs(rx) > 0.18) this.yawT -= rx * dt * 1.15 * this.lookSens
-    if (Math.abs(ry) > 0.18) {
-      const pitchDelta = (this.invertY ? ry : -ry) * dt * 0.7 * this.lookSens
+    if (Math.abs(f.rx) > 0) this.yawT -= f.rx * dt * 1.15 * this.lookSens
+    if (Math.abs(f.ry) > 0) {
+      const pitchDelta = (this.invertY ? f.ry : -f.ry) * dt * 0.7 * this.lookSens
       this.pitchT = Math.max(-1.15, Math.min(1.15, this.pitchT + pitchDelta))
     }
-    if (this.buildMode) {
-      if (edge(4) || edge(14)) this.cyclePiece(-1)
-      if (edge(5) || edge(15)) this.cyclePiece(1)
-      const rotUp = edge(12)
-      const rotDown = edge(13)
-      if (rotUp) this.buildYaw += Math.PI / 2
-      else if (rotDown) this.buildYaw -= Math.PI / 2
-      if (edge(0) || edge(7)) this.confirmPlace()
-      if (edge(2)) this.pickupPiece()
-      if (edge(1) || edge(3)) this.toggleBuild(false)
-      this.gp = { lx, ly, rx, ry, attack: false, horn: false, dash: false, dig: false, rise: false, dive: false, sprint: pressed(10), use: false }
+    if (layer === 'build') {
+      if (f.cyclePrev) this.cyclePiece(-1)
+      if (f.cycleNext) this.cyclePiece(1)
+      if (f.rotateUp) this.buildYaw += Math.PI / 2
+      else if (f.rotateDown) this.buildYaw -= Math.PI / 2
+      if (f.place) this.confirmPlace()
+      if (f.pickup) this.pickupPiece()
+      if (f.leaveBuild) this.toggleBuild(false)
+      this.gp = { lx: f.lx, ly: f.ly, rx: f.rx, ry: f.ry, attack: false, horn: false, dash: false, dig: false, rise: false, dive: false, sprint: f.sprint, use: false }
       return
     }
-    if (edge(3)) this.toggleBuild(true)
-    if (edge(14)) this.toggleEvo()
-    if (edge(11)) this.toggleLock()
-    if (edge(1) && this.cd.dash <= 0) {
+    if (f.build) this.toggleBuild(true)
+    if (f.evolve) this.toggleEvo()
+    if (f.lock) this.toggleLock()
+    if (f.dash && this.cd.dash <= 0) {
       this.cd.dash = 1.05
       this.dashT = 0.2
     }
-    if (pressed(6) && this.cd.horn <= 0) {
+    if (f.horn && this.cd.horn <= 0) {
       this.cd.horn = 1.7
       this.hornT = 0.18
     }
     this.gp = {
-      lx, ly, rx, ry,
-      attack: pressed(7),
-      horn: pressed(6),
+      lx: f.lx,
+      ly: f.ly,
+      rx: f.rx,
+      ry: f.ry,
+      attack: f.bite,
+      horn: false,
       dash: false,
-      dig: pressed(2),
-      rise: pressed(4) || pressed(12) || pressed(0),
-      dive: pressed(5) || pressed(13),
-      sprint: pressed(10),
-      use: pressed(2),
+      dig: f.dig,
+      rise: f.rise,
+      dive: f.dive,
+      sprint: f.sprint,
+      use: f.use,
     }
   }
 
@@ -1538,8 +1618,8 @@ export class Game {
     const right = k.has('d') || k.has('arrowright')
     const forwardKey = k.has('w') || k.has('arrowup')
     const backKey = k.has('s') || k.has('arrowdown')
-    let camForward = (forwardKey ? 1 : 0) - (backKey ? 1 : 0) + this.stick.y - (Math.abs(this.gp.ly) > 0.2 ? this.gp.ly : 0)
-    let camStrafe = (right ? 1 : 0) - (left ? 1 : 0) + this.stick.x + (Math.abs(this.gp.lx) > 0.2 ? this.gp.lx : 0)
+    let camForward = (forwardKey ? 1 : 0) - (backKey ? 1 : 0) + this.stick.y - this.gp.ly
+    let camStrafe = (right ? 1 : 0) - (left ? 1 : 0) + this.stick.x + this.gp.lx
     let jump = k.has(' ') || this.riseHeld || this.gp.rise
     const dive = k.has('c') || k.has('control') || this.diveHeld || this.gp.dive
     const sprint = k.has('shift') || this.gp.sprint
@@ -1584,7 +1664,7 @@ export class Game {
       while (turn > Math.PI) turn -= Math.PI * 2
       while (turn < -Math.PI) turn += Math.PI * 2
       you.yaw += turn * Math.min(1, dt * 8)
-      this.yawT += ((want - this.yaw + Math.PI * 3) % (Math.PI * 2) - Math.PI) * 0.08
+      if (this.lookDragT <= 0) this.yawT += ((want - this.yaw + Math.PI * 3) % (Math.PI * 2) - Math.PI) * 0.08
     } else if (Math.hypot(camForward, camStrafe) > 0.15) {
       const wish = Math.atan2(
         Math.sin(orbit) * camForward + Math.cos(orbit) * camStrafe,
@@ -1651,6 +1731,7 @@ export class Game {
       this.save()
     }
     this.waterU.value = this.time
+    if (this.lookDragT > 0) this.lookDragT = Math.max(0, this.lookDragT - dt)
     this.easeLook(dt)
     this.pollPad(dt)
     if (this.playing) {
@@ -1899,6 +1980,7 @@ export class Game {
   }
 
   private sync(): void {
+    this.syncTouchButtons()
     const seen = new Set<number>()
     for (const e of this.world.ents) {
       if (!e.alive && e.kind !== 'player') {
@@ -1909,12 +1991,24 @@ export class Game {
       const sig = creatureKey(e.load, e.spent, e.species) + e.kind
       let group = this.meshes.get(e.id)
       if (!group || this.keysigs.get(e.id) !== sig) {
+        const from = group?.userData.viewS as { x: number; y: number; z: number } | undefined
         group?.removeFromParent()
         group = buildCreature(e.load, e.spent, e.kind === 'boss' ? 'boss' : e.kind === 'player' ? 'player' : 'npc', e.species)
+        group.userData.targetS = { x: group.scale.x, y: group.scale.y, z: group.scale.z }
+        group.userData.viewS = from ?? { x: group.scale.x, y: group.scale.y, z: group.scale.z }
+        if (from) group.scale.set(from.x, from.y, from.z)
         this.scene.add(group)
         this.meshes.set(e.id, group)
         this.keysigs.set(e.id, sig)
       }
+      const wantS = (group.userData.targetS ?? { x: group.scale.x, y: group.scale.y, z: group.scale.z }) as { x: number; y: number; z: number }
+      const viewS = (group.userData.viewS ?? wantS) as { x: number; y: number; z: number }
+      const sk = e.kind === 'player' ? 1 - Math.exp(-0.048 * 3.2) : 1
+      viewS.x += (wantS.x - viewS.x) * sk
+      viewS.y += (wantS.y - viewS.y) * sk
+      viewS.z += (wantS.z - viewS.z) * sk
+      group.userData.viewS = viewS
+      group.scale.set(viewS.x, viewS.y, viewS.z)
       const y = e.kind === 'player' || e.region !== 'sea' ? Math.max(e.y, 1.05) : e.y
       group.userData.baseY = y
       group.userData.yaw = e.yaw

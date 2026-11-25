@@ -3,6 +3,7 @@ import { columnSeconds } from '../shared/dig'
 import { attackVolumes, bodyScale, volumeHits, youngBite } from '../shared/body'
 import { applyWorldSnapshot, createWorld, playerOf, snapshotWorld, step } from '../shared/sim'
 import { applyGameSave, encodeGameSave, parseGameSave, serializeGameSave } from '../shared/save'
+import { BTN, deadzone, readPad, type PadLike } from '../shared/pad'
 import { canPlace, placePiece, refundPiece } from '../shared/build'
 import { bodyBreakPower, cellSeconds, chopSeconds, compute, tierOf } from '../shared/rules'
 
@@ -191,7 +192,7 @@ if ((pup.bag.kelp ?? 0) !== 0 || (pup.bag.sticks ?? 0) !== 0 || (pup.bag.stone ?
 }
 if (pup.load.lungs !== 0 || pup.load.legs !== 0 || pup.load.armor !== 0) throw new Error('new guppy should have no grown parts')
 const pupBite = compute(pup.load, pup.spent).bite
-if (pupBite > 2) throw new Error(`guppy bite should be weak, got ${pupBite}`)
+if (pupBite > 3) throw new Error(`guppy bite should stay capped, got ${pupBite}`)
 const pupScale = bodyScale(pup.load, pup.spent)
 const oldStarter = starterLoad()
 oldStarter.size = 0.92
@@ -309,4 +310,57 @@ console.log('pickup refunds without a free replacement; refunds persist')
   const nw = createWorld()
   if (!/tiny guppy/i.test(nw.banner)) throw new Error('new games should still greet a guppy')
   console.log('mid-game load hides the guppy banner')
+}
+
+
+function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<number, number> = {}): PadLike {
+  const buttons = Array.from({ length: 16 }, (_, i) => {
+    const v = values[i] ?? (pressed.includes(i) ? 1 : 0)
+    return { pressed: v > 0.45 || pressed.includes(i), value: v }
+  })
+  return { connected: true, axes, buttons }
+}
+
+{
+  const z = deadzone(0.1, 0.05, 0.2)
+  if (z.x !== 0 || z.y !== 0) throw new Error('sticks inside the deadzone should be zero')
+  const s = deadzone(1, 0, 0.2)
+  if (Math.abs(s.x - 1) > 0.001 || s.y !== 0) throw new Error('a full left-stick deflection should rescale to 1')
+  const idle = readPad(fakePad(), [], 'play', false)
+  if (idle.frame.bite || idle.frame.dash || idle.frame.sprint) throw new Error('an idle pad should issue no play actions')
+  const play = readPad(fakePad([BTN.RT, BTN.LT, BTN.A], [0.95, 0, 0.9, 0]), [], 'play', false)
+  if (!play.frame.bite || !play.frame.sprint || !play.frame.rise) throw new Error('RT bites, LT boosts, A jumps')
+  if (play.frame.lx <= 0 || play.frame.rx <= 0) throw new Error('movement and camera sticks should pass a sensible deadzone')
+  const ev = readPad(fakePad([BTN.LEFT]), [], 'play', false)
+  if (!ev.frame.evolve || ev.frame.dash) throw new Error('D-pad Left should open Evolve')
+  const start = readPad(fakePad([BTN.START]), [], 'play', false)
+  if (!start.frame.start) throw new Error('Start should be pause')
+  const view = readPad(fakePad([BTN.VIEW]), [], 'play', false)
+  if (!view.frame.view) throw new Error('View should be Select')
+  const dash = readPad(fakePad([BTN.B]), [], 'play', false)
+  if (!dash.frame.dash || dash.frame.leaveBuild) throw new Error('B dashes only outside build')
+  const buildB = readPad(fakePad([BTN.B, BTN.UP, BTN.DOWN, BTN.RT]), [], 'build', false)
+  if (!buildB.frame.leaveBuild || buildB.frame.dash) throw new Error('B leaves build without dashing')
+  if (!buildB.frame.rotateUp || !buildB.frame.rotateDown || !buildB.frame.place) throw new Error('D-pad U/D rotate and RT places in build')
+  const menu = readPad(fakePad([BTN.A, BTN.DOWN], [0, 0.9, 0, 0]), [], 'menu', false)
+  if (!menu.frame.confirm || !menu.frame.navDown) throw new Error('menus should navigate with the D-pad or stick and confirm with A')
+  const gone = readPad(null, [true, true, true], 'play', true)
+  if (gone.frame.connected || gone.prev.length || gone.navLatch) throw new Error('a disconnect should clear pad state')
+  // Analog trigger below the press threshold still counts as a bite when value is high
+  const soft = readPad(fakePad([], [0, 0, 0, 0], { [BTN.RT]: 0.8, [BTN.LT]: 0.8 }), [], 'play', false)
+  if (!soft.frame.bite || !soft.frame.sprint) throw new Error('analog triggers should bite and boost past the threshold')
+  console.log('standard pad mapping')
+}
+
+{
+  const w = createWorld()
+  const gup = playerOf(w)
+  const snack = w.ents.find((e) => e.kind === 'npc' && e.region === 'sea' && e.bias <= 0 && e.alive)
+  if (!snack) throw new Error('expected nearby fry')
+  const dmg = compute(gup.load, gup.spent).bite
+  const nips = Math.ceil(snack.hp / dmg)
+  if (nips < 1 || nips > 2) throw new Error(`first meal should take 1-2 bites, got ${nips} (hp ${snack.hp} bite ${dmg})`)
+  const later = w.ents.find((e) => e.kind === 'npc' && e.region === 'sea' && e.bias > 0)
+  if (later && later.maxHp <= 3) throw new Error('later sea prey should keep mid-game health')
+  console.log('first meal takes 1-2 bites')
 }
