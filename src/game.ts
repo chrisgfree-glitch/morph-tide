@@ -474,7 +474,7 @@ export class Game {
       this.lookId = e.pointerId
       this.lookLast = { x: e.clientX, y: e.clientY }
       this.lookDragT = 0.55
-      look.setPointerCapture(e.pointerId)
+      try { look.setPointerCapture(e.pointerId) } catch { /* pointer already ended */ }
     })
     look?.addEventListener('pointermove', (e) => {
       if (e.pointerId !== this.lookId) return
@@ -646,7 +646,7 @@ export class Game {
     stick.addEventListener('pointerdown', (e) => {
       e.preventDefault()
       pid = e.pointerId
-      stick.setPointerCapture(e.pointerId)
+      try { stick.setPointerCapture(e.pointerId) } catch { /* pointer already ended */ }
       move(e)
     })
     stick.addEventListener('pointermove', move)
@@ -1508,7 +1508,9 @@ export class Game {
     }
     if (f.view && this.playing) {
       if (this.padHelpOpen) this.togglePadHelp(false)
-      if (this.selectOpen) this.toggleSelect(false)
+      const selectEl = document.getElementById('select')
+      const selectVisible = this.selectOpen && !this.pauseOpen && !this.quitOpen && !this.evoOpen && !!selectEl && !selectEl.hidden
+      if (selectVisible) this.toggleSelect(false)
       else {
         if (this.pauseOpen) this.togglePause(false)
         if (this.evoOpen) this.toggleEvo(false)
