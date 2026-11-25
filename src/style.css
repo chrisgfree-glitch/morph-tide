@@ -143,17 +143,32 @@ input { background: #1a2a30; color: #e7e0d4; border: 2px solid #d7cbb8; padding:
 }
 .stick {
   position: absolute;
-  left: calc(18px + env(safe-area-inset-left));
-  bottom: calc(16px + env(safe-area-inset-bottom));
-  width: 112px; height: 112px; border-radius: 50%;
-  background: rgba(18, 36, 40, 0.4);
-  border: 2px solid rgba(215, 203, 184, 0.75);
+  left: calc(14px + env(safe-area-inset-left));
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  width: 156px; height: 156px; border-radius: 50%;
+  background: rgba(14, 30, 34, 0.48);
+  border: 3px solid rgba(232, 220, 198, 0.9);
+  box-shadow: 0 0 0 2px rgba(10, 24, 28, 0.45), inset 0 0 0 10px rgba(232, 220, 198, 0.12);
   pointer-events: auto;
 }
+.stick::before {
+  content: '';
+  position: absolute;
+  inset: 22%;
+  border-radius: 50%;
+  border: 1.5px solid rgba(232, 220, 198, 0.35);
+  pointer-events: none;
+}
+.stick.active {
+  border-color: rgba(255, 236, 200, 1);
+  box-shadow: 0 0 0 3px rgba(255, 224, 150, 0.35), inset 0 0 0 10px rgba(255, 236, 200, 0.2);
+}
 #knob {
-  width: 48px; height: 48px; border-radius: 50%;
-  background: rgba(228, 216, 198, 0.92);
-  position: absolute; left: 32px; top: 32px;
+  width: 68px; height: 68px; border-radius: 50%;
+  background: rgba(240, 228, 208, 0.96);
+  border: 2px solid rgba(40, 28, 18, 0.35);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  position: absolute; left: 44px; top: 44px;
 }
 #arc {
   position: absolute;
@@ -196,8 +211,8 @@ input { background: #1a2a30; color: #e7e0d4; border: 2px solid #d7cbb8; padding:
   #settings { top: 4px; bottom: 16px; max-height: none; padding: 6px; }
   #settings label { margin: 2px 0; gap: 2px; }
   #settings button, #settings select, #settings input { margin: 1px 0; padding: 3px 8px; }
-  .stick { width: 96px; height: 96px; left: calc(8px + env(safe-area-inset-left)); bottom: calc(8px + env(safe-area-inset-bottom)); }
-  #knob { width: 40px; height: 40px; left: 28px; top: 28px; }
+  .stick { width: 148px; height: 148px; left: calc(10px + env(safe-area-inset-left)); bottom: calc(10px + env(safe-area-inset-bottom)); }
+  #knob { width: 64px; height: 64px; left: 42px; top: 42px; }
   .orb, .word { width: 56px; height: 56px; min-width: 56px; min-height: 56px; }
   .primary { width: 68px; height: 68px; min-width: 68px; min-height: 68px; }
   #arc { right: calc(8px + env(safe-area-inset-right)); bottom: calc(8px + env(safe-area-inset-bottom)); gap: 8px; width: auto; height: auto; }

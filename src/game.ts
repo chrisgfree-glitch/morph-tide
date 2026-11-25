@@ -383,6 +383,11 @@ export class Game {
   }
 
   private bindUi(): void {
+    audio.loadSettings()
+    const volEl = document.getElementById('set-vol') as HTMLInputElement | null
+    if (volEl) volEl.value = String(audio.volume)
+    const muteBtn = document.getElementById('set-mute')
+    if (muteBtn) muteBtn.textContent = audio.muted ? 'Unmute' : 'Mute'
     const solo = document.getElementById('solo')
     const name = document.getElementById('name') as HTMLInputElement | null
     solo?.addEventListener('click', () => {
@@ -438,12 +443,11 @@ export class Game {
     })
     document.getElementById('set-vol')?.addEventListener('input', (e) => {
       audio.setVolume(Number((e.target as HTMLInputElement).value))
-      audio.muted = audio.volume <= 0
       const mute = document.getElementById('set-mute')
       if (mute) mute.textContent = audio.muted ? 'Unmute' : 'Mute'
     })
     document.getElementById('set-mute')?.addEventListener('click', () => {
-      audio.muted = !audio.muted
+      audio.setMuted(!audio.muted)
       const mute = document.getElementById('set-mute')
       if (mute) mute.textContent = audio.muted ? 'Unmute' : 'Mute'
     })
@@ -653,11 +657,14 @@ export class Game {
       const rect = stick.getBoundingClientRect()
       const dx = e.clientX - (rect.left + rect.width / 2)
       const dy = e.clientY - (rect.top + rect.height / 2)
-      const max = rect.width * 0.36
-      const mag = Math.min(max, Math.hypot(dx, dy))
+      const max = rect.width * 0.42
+      const raw = Math.hypot(dx, dy)
+      const dead = max * 0.08
+      const mag = raw < dead ? 0 : Math.min(max, raw)
       const ang = Math.atan2(dy, dx)
-      this.stick.x = Math.cos(ang) * (mag / max)
-      this.stick.y = -Math.sin(ang) * (mag / max)
+      const amt = mag / max
+      this.stick.x = Math.cos(ang) * amt
+      this.stick.y = -Math.sin(ang) * amt
       knob.style.transform = `translate(${Math.cos(ang) * mag}px, ${Math.sin(ang) * mag}px)`
     }
     const end = (e: PointerEvent) => {
@@ -666,10 +673,12 @@ export class Game {
       this.stick.x = 0
       this.stick.y = 0
       knob.style.transform = 'translate(0px, 0px)'
+      stick.classList.remove('active')
     }
     stick.addEventListener('pointerdown', (e) => {
       e.preventDefault()
       pid = e.pointerId
+      stick.classList.add('active')
       try { stick.setPointerCapture(e.pointerId) } catch { /* pointer already ended */ }
       move(e)
     })
@@ -1294,8 +1303,18 @@ export class Game {
     )
   }
 
+  private sfxFor(kind: string): string {
+    if (kind === 'eat' || kind === 'gem') return 'eat'
+    if (kind === 'hit' || kind === 'hurt' || kind === 'bite' || kind === 'heal' || kind === 'evolve') return kind
+    if (kind === 'dig' || kind === 'mine' || kind === 'chop' || kind === 'gather') return kind
+    if (kind === 'warn' || kind === 'alert' || kind === 'wave' || kind === 'trap' || kind === 'geyser') return kind
+    if (kind === 'win' || kind === 'held' || kind === 'tower' || kind === 'gate' || kind === 'boss-unlock') return kind
+    if (kind === 'ui') return 'ui'
+    return ''
+  }
+
   private feel(kind: string): void {
-    audio.blip(kind)
+    if (!audio.blip(kind)) return
     if (kind === 'hit' || kind === 'bite') {
       this.kickCam(0.1)
       navigator.vibrate?.(25)
@@ -1330,8 +1349,8 @@ export class Game {
     const aheadX = Math.cos(this.yaw)
     const aheadZ = Math.sin(this.yaw)
     const lock = this.world.ents.find((e) => e.id === this.lockId && e.alive)
-    const lookX = you.x + you.vx * 0.12
-    const lookZ = you.z + you.vz * 0.12
+    const lookX = you.x + you.vx * 0.04
+    const lookZ = you.z + you.vz * 0.04
     if (this.firstPerson) {
       const fx = Math.cos(you.yaw)
       const fz = Math.sin(you.yaw)
@@ -1341,7 +1360,7 @@ export class Game {
       return
     }
     this.camera.near = 0.1
-    const k = 1 - Math.exp(-Math.max(0, dt) * 3.2)
+    const k = 1 - Math.exp(-Math.max(0, dt) * 5.4)
     this.camDist += (this.camDistT - this.camDist) * k
     const tight = you.biteT > 0 || this.dashT > 0
     const dist = this.camDist * this.zoom * (tight ? 0.62 : 1)
@@ -1785,10 +1804,11 @@ export class Game {
     }
     if (this.digPulse > 0) dig = true
     if (this.buildMode && (this.actHeld || k.has('f'))) this.pickupPiece()
-    if (!backKey && camForward > -0.2 && !this.buildMode) {
+    // Light prey assist only while the player is already swimming forward — never auto-drive an idle stick.
+    if (camForward > 0.2 && !this.buildMode) {
       const prey = nearestInCone(this.world, you)
       const near = prey ? Math.hypot(prey.x - you.x, prey.y - you.y, prey.z - you.z) : 99
-      camForward = Math.min(1, camForward + (near < 2.4 ? 0.12 : 0.62))
+      if (prey && near < 2.8) camForward = Math.min(1, camForward + 0.12)
     }
     // Camera-relative move; when locked, face the prey and strafe around it.
     let moveF = camForward
@@ -1798,7 +1818,7 @@ export class Game {
       let turn = want - you.yaw
       while (turn > Math.PI) turn -= Math.PI * 2
       while (turn < -Math.PI) turn += Math.PI * 2
-      you.yaw += turn * Math.min(1, dt * 8 * agility(morphOf(you.load)).turn)
+      you.yaw += turn * Math.min(1, dt * 16 * agility(morphOf(you.load)).turn)
       if (this.lookDragT <= 0) this.yawT += ((want - this.yaw + Math.PI * 3) % (Math.PI * 2) - Math.PI) * 0.08
     } else if (Math.hypot(camForward, camStrafe) > 0.15) {
       const wish = Math.atan2(
@@ -1808,7 +1828,7 @@ export class Game {
       let turn = wish - you.yaw
       while (turn > Math.PI) turn -= Math.PI * 2
       while (turn < -Math.PI) turn += Math.PI * 2
-      you.yaw += turn * Math.min(1, dt * 8 * agility(morphOf(you.load)).turn)
+      you.yaw += turn * Math.min(1, dt * 16 * agility(morphOf(you.load)).turn)
       moveF = Math.min(1, Math.hypot(camForward, camStrafe))
       moveS = 0
     }
@@ -1835,9 +1855,13 @@ export class Game {
     const ax = Math.max(-1, Math.min(1, moveS))
     const lookClimb = Math.max(-1, Math.min(1, Math.sin(this.pitch) * 1.25))
     const ay = dive ? -1 : jump ? 1 : lookClimb
-    const ease = 1 - Math.exp(-dt * 12)
+    const ease = 1 - Math.exp(-dt * 22)
     this.sAx += (ax - this.sAx) * ease
     this.sAy += (fwd - this.sAy) * ease
+    if (Math.hypot(this.sAx, this.sAy) < 0.05) {
+      this.sAx = 0
+      this.sAy = 0
+    }
     if (this.mouseUp) {
       this.mouseBite = false
       this.mouseUp = false
@@ -1889,7 +1913,8 @@ export class Game {
     else if (this.playing && !this.paused && !this.evoOpen && !this.selectOpen && !this.pauseOpen && !this.quitOpen && !this.mapOpen && !this.world.over) {
       const ev = step(this.world, dt, this.gather(dt))
       for (const e of ev) {
-        if (e.t !== 'note') this.feel(e.t === 'eat' ? 'eat' : e.t)
+        const sfx = this.sfxFor(e.t)
+        if (sfx) this.feel(sfx)
         if (e.t === 'hit' || e.t === 'hurt') {
           this.burst(e.x, e.y, e.t === 'hit' ? 0xffe6a0 : 0xc4b59a, e.text)
           if (e.t === 'hit') this.flashHit(e.x, e.y)
@@ -1931,7 +1956,7 @@ export class Game {
     if (actLbl) actLbl.textContent = near ? 'Get' : 'Dig'
     actBtn?.setAttribute('aria-label', near ? 'Gather' : 'Dig')
     const tight = you.biteT > 0 || this.dashT > 0
-    const ck = 1 - Math.exp(-dt * (tight ? 10 : 5.5))
+    const ck = 1 - Math.exp(-dt * (tight ? 12 : 8))
     this.camPos.lerp(this.camGoal, ck)
     this.lookPos.lerp(this.lookGoal, 1 - Math.exp(-dt * (tight ? 8 : 5)))
     this.camera.position.copy(this.camPos)
@@ -2501,6 +2526,8 @@ export function mount(): Game | null {
     place: () => game['confirmPlace'](),
     pickup: () => game['pickupPiece'](),
     cycle: (dir: number) => game['cyclePiece'](dir),
+    sfx: () => ({ ...audio.counts }),
+    sfxReset: () => audio.resetCounts(),
     tick: (dt = 1 / 30, input: Partial<Frame> = {}) => {
       const ev = step(game.world, Math.max(0, Math.min(0.05, dt)), {
         ax: 0,

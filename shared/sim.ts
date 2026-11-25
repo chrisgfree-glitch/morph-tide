@@ -619,15 +619,25 @@ export function tryPurchase(e: Ent, kind: string, id: string): Buy {
 }
 
 function pushSolids(w: World, you: Ent): void {
+  // Land trees and rocks only — never in open water. The shoreline stop is the only swim barrier.
+  if (!isDryLand(you.x, you.z)) return
   for (const n of w.nodes) {
-    if (n.amount <= 0 || !n.rad || n.rad < 0.18) continue
+    if (n.amount <= 0 || !n.rad || n.rad < 0.14) continue
     if (n.kind !== 'tree' && n.kind !== 'rock') continue
+    if (!isDryLand(n.x, n.z ?? 0)) continue
     const dx = you.x - n.x
     const dz = you.z - (n.z ?? 0)
     const d = Math.hypot(dx, dz)
     if (d >= n.rad || d < 1e-4) continue
-    you.x = n.x + (dx / d) * n.rad
-    you.z = (n.z ?? 0) + (dz / d) * n.rad
+    const nx = dx / d
+    const nz = dz / d
+    you.x = n.x + nx * n.rad
+    you.z = (n.z ?? 0) + nz * n.rad
+    const inward = you.vx * nx + you.vz * nz
+    if (inward < 0) {
+      you.vx -= inward * nx
+      you.vz -= inward * nz
+    }
   }
 }
 
@@ -708,7 +718,7 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   stats.bite += gear.bite
   stats.swim += gear.swim
   const box = bodyBox(you.load, you.spent, false, you.species)
-  const ground = 1.12
+  const ground = groundAt(you.x, you.z, you.y)
   const slow = you.slow > 0 ? 0.55 : 1
   const dryUnder = isDryLand(you.x, you.z)
   // Stay in the water a little past the surface so gravity and buoyancy do not fight every frame.
@@ -733,13 +743,14 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   if (submerged) {
     const sprint = input.sprint ? 1.32 : 1
     const maxV = ((3.3 + stats.swim * 0.08) * slow * sprint) / (1 + Math.max(0, drag - 1) * 0.28)
-    const accel = (13 / Math.sqrt(box.mass)) * agility(morphOf(you.load)).accel
+    const accel = (32 / Math.sqrt(box.mass)) * agility(morphOf(you.load)).accel
+    const brake = Math.max(accel * 1.8, 28)
     const idle = Math.abs(fwd) < 0.08 && Math.abs(strafe) < 0.08 && Math.abs(rise) < 0.08
     const climb = fwd * sp + rise * 0.85
-    const ty = idle ? -0.32 / box.mass : climb * maxV * 0.7
-    you.vx = approach(you.vx, wishX * maxV, idle ? drag * 2.4 : accel, dt)
-    you.vz = approach(you.vz, wishZ * maxV, idle ? drag * 2.4 : accel, dt)
-    you.vy = approach(you.vy, ty, idle ? drag * 1.6 : accel * 0.85, dt)
+    const ty = idle ? -0.16 / box.mass : climb * maxV * 0.7
+    you.vx = approach(you.vx, wishX * maxV, idle ? brake : accel, dt)
+    you.vz = approach(you.vz, wishZ * maxV, idle ? brake : accel, dt)
+    you.vy = approach(you.vy, ty, idle ? brake * 0.65 : accel, dt)
     you.air = stats.air
     you.peak = you.y
   } else {
@@ -747,13 +758,15 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     you.vy -= grav * dt
     const sprint = input.sprint ? 1.35 : 1
     const maxRun = ((4.4 + stats.spd * 0.1) * slow * sprint) / Math.sqrt(box.mass)
-    const runA = (20 / box.mass) * (you.stun > 0 ? 0.2 : 1) * agility(morphOf(you.load)).accel
+    const runA = (36 / box.mass) * (you.stun > 0 ? 0.2 : 1) * agility(morphOf(you.load)).accel
+    const brake = Math.max(runA * 1.8, 32)
     const flop = dryUnder && !landOk(you.load, you.spent)
-    you.vx = approach(you.vx, flop ? -1.1 : wishX * maxRun, flop ? 6 : runA, dt)
-    you.vz = approach(you.vz, flop ? 0 : wishZ * maxRun, flop ? 6 : runA, dt)
+    const idleLand = Math.hypot(wishX, wishZ) < 0.08
+    you.vx = approach(you.vx, flop ? -1.1 : wishX * maxRun, flop ? 10 : idleLand ? brake : runA, dt)
+    you.vz = approach(you.vz, flop ? 0 : wishZ * maxRun, flop ? 10 : idleLand ? brake : runA, dt)
     if (you.y > ground + 0.35) you.peak = Math.max(you.peak, you.y)
     const jumpV = 8.6 / Math.sqrt(box.mass) + Math.min(1.6, you.load.legs) * 0.2
-    if (!flop && input.jump && you.y <= ground + 0.16 && you.vy <= 0.2) you.vy = jumpV
+    if (!flop && input.jump && you.y <= ground + 0.24 && you.vy <= 0.45) you.vy = jumpV
     if (!flop && you.load.wings > 0 && input.jump && you.y > ground + 0.25) you.vy = Math.max(you.vy, Math.min(4.5, stats.fly) / box.mass)
     if (flop && you.y <= ground + 0.08) you.vy = Math.max(you.vy, Math.sin(w.time * 9) * 1.1)
     const heat = you.region === 'volcano' && stats.heat <= 0
@@ -813,7 +826,7 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     if (you.y < floor + 0.16) you.y = floor + 0.16
   }
 
-  const floorY = groundAt(you.x, you.z, you.y) + (submerged ? 0.35 : 0)
+  const floorY = groundAt(you.x, you.z, you.y) + (submerged ? 0.35 : 0.16)
   if (!submerged && you.y <= floorY && you.vy <= 0) {
     const drop = you.peak - floorY
     you.y = floorY
@@ -839,15 +852,17 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   pushSolids(w, you)
   if (!landOk(you.load, you.spent) && isDryLand(you.x, you.z)) {
     const edge = shoreX(you.z) - 0.2
-    if (!w.shoreWarned) {
-      w.shoreWarned = true
-      w.banner = ashoreNeed()
-      w.bannerT = 6
-      ev.push({ t: 'note', x: you.x, y: you.y, text: 'The shore is closed until you can breathe on land.' })
+    if (you.x > edge) {
+      if (!w.shoreWarned) {
+        w.shoreWarned = true
+        w.banner = ashoreNeed()
+        w.bannerT = 6
+        ev.push({ t: 'note', x: you.x, y: you.y, text: 'The shore is closed until you can breathe on land.' })
+      }
+      you.x = edge
+      you.y = Math.min(you.y, WATER - 0.2)
+      if (you.vx > 0) you.vx = 0
     }
-    you.x = Math.min(you.x, edge)
-    you.y = Math.min(you.y, WATER - 0.2)
-    you.vx = Math.min(you.vx, 0)
   }
   you.region = regionAt(you.x, you.z)
   tickDots(you, dt, ev)
@@ -961,6 +976,7 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     const huntAssist = !!(aim && !(nearBoss && aim.kind !== 'boss' && !input.bite))
     if (aim && huntAssist) {
       const young = you.kind === 'player' && youngBite(you.load, you.spent)
+      const pressed = !!(input.bite || you.biteBuf > 0)
       const dx = aim.x - you.x
       const dz = aim.z - you.z
       const dist = Math.hypot(dx, dz, aim.y - you.y)
@@ -969,18 +985,19 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
       while (turn > Math.PI) turn -= Math.PI * 2
       while (turn < -Math.PI) turn += Math.PI * 2
       const limit = young ? 1.2 : 0.9
-      if (Math.abs(turn) < limit) you.yaw += turn * (young ? 0.88 : 0.45)
-      if (young && dist < 2.8 && Math.abs(turn) < 1.2) {
+      if (Math.abs(turn) < limit) you.yaw += turn * (young ? (pressed ? 0.88 : 0.35) : 0.45)
+      if (pressed && young && dist < 2.8 && Math.abs(turn) < 1.2) {
         const pull = Math.min(0.55, 0.2 + (2.8 - dist) * 0.18)
         you.x += Math.cos(you.yaw) * pull * 0.45 + (aim.x - you.x) * 0.16
         you.z += Math.sin(you.yaw) * pull * 0.45 + (aim.z - you.z) * 0.16
         you.y += (aim.y - you.y) * 0.22
       }
-      you.vx += Math.cos(you.yaw) * (young ? 7.4 : 6.2)
-      you.vz += Math.sin(you.yaw) * (young ? 7.4 : 6.2)
-      you.vy += Math.max(-2.4, Math.min(2.4, (aim.y - you.y) * 2.2))
+      const lunge = pressed ? (young ? 7.4 : 6.2) : (young ? 1.6 : 1.2)
+      you.vx += Math.cos(you.yaw) * lunge
+      you.vz += Math.sin(you.yaw) * lunge
+      if (pressed) you.vy += Math.max(-2.4, Math.min(2.4, (aim.y - you.y) * 2.2))
     }
-    ev.push({ t: 'bite', x: you.x, y: you.y, text: '' })
+    if (input.bite || you.biteBuf > 0) ev.push({ t: 'bite', x: you.x, y: you.y, text: '' })
   }
   if (input.dig) {
     if (isDryLand(you.x, you.z) && forageNear(w, you, ev)) {
@@ -1313,7 +1330,7 @@ function npcThink(w: World, dt: number, ev: Evt[]): void {
       if (inMouth && e.biteCd <= 0 && e.tele <= 0 && teleWas <= 0) {
         e.tele = e.kind === 'boss' ? 0.55 : 0.48
         e.biteT = e.tele
-        ev.push({ t: 'warn', x: e.x, y: e.y, text: `${e.name} lunges!` })
+        if (target.kind === 'player' || e.kind === 'boss') ev.push({ t: 'warn', x: e.x, y: e.y, text: `${e.name} lunges!` })
       }
       if (e.tele > 0) wish *= 0.08
       if (teleWas > 0 && e.tele === 0 && inMouth) {
@@ -1337,7 +1354,10 @@ function npcThink(w: World, dt: number, ev: Evt[]): void {
           target.vz += Math.sin(e.yaw) * 2.2
           target.stun = Math.max(target.stun, 0.07)
           w.shake = Math.max(w.shake, 0.1)
-          ev.push({ t: 'hit', x: target.x, y: target.y, text: `${dmg}` })
+          // Only announce hits that involve the player or boss — crowded fry nibble each other silently.
+          if (target.kind === 'player' || e.kind === 'boss') {
+            ev.push({ t: 'hit', x: target.x, y: target.y, text: `${dmg}` })
+          }
           if (!target.alive && target.kind !== 'player') {
             e.ep += 3 + e.bias / 10
             autoEvolve(e)

@@ -726,7 +726,197 @@ console.log('all checks ok')
   const big = ['redwood', 'oak', 'pine', 'baobab', 'palm']
   for (const kind of big) {
     const r = trunkRadius(kind, 2.4)
-    if (r < 0.22) throw new Error(`${kind} collider should match the larger trunk, got ${r}`)
+    if (r < 0.28 || r > 1.4) throw new Error(`${kind} collider should sit under the larger visible trunk, got ${r}`)
   }
-  console.log('larger tree colliders')
+  if (trunkRadius('pebble', 1) !== 0) throw new Error('pebbles must not have colliders')
+  console.log('tree colliders fit the visible trunks')
+}
+
+{
+  const w = createWorld()
+  const you = playerOf(w)
+  you.x = 12
+  you.y = 2.6
+  you.z = 0
+  you.yaw = 0
+  const counts: Record<string, number> = {}
+  let total = 0
+  for (let i = 0; i < 240; i++) {
+    const ev = step(w, 1 / 30, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 0 })
+    for (const e of ev) {
+      if (e.t === 'note') continue
+      counts[e.t] = (counts[e.t] || 0) + 1
+      total++
+    }
+  }
+  const bump = (counts.warn || 0) + (counts.hit || 0)
+  if (bump > 6) throw new Error(`idle starter sea should not spam bump/warn/hit events, got ${bump} ${JSON.stringify(counts)}`)
+  console.log('idle sea no longer spams bump events', total, counts)
+}
+
+{
+  const w = createWorld()
+  const you = playerOf(w)
+  you.x = 12
+  you.y = 2.6
+  you.z = 0
+  you.yaw = 0
+  const counts: Record<string, number> = {}
+  for (let i = 0; i < 240; i++) {
+    const ev = step(w, 1 / 30, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
+    for (const e of ev) {
+      if (e.t === 'note' || e.t === 'eat' || e.t === 'heal') continue
+      counts[e.t] = (counts[e.t] || 0) + 1
+    }
+  }
+  const bump = (counts.warn || 0) + (counts.hit || 0) + (counts.bite || 0)
+  if (bump > 12) throw new Error(`swimming through fry should not spam bite/warn/hit, got ${bump} ${JSON.stringify(counts)}`)
+  console.log('forward swim bump-like events stayed low', counts)
+}
+
+
+{
+  const w = createWorld()
+  const you = playerOf(w)
+  you.x = 20
+  you.y = 2.8
+  you.z = 0
+  you.yaw = 0
+  you.vx = 0
+  you.vy = 0
+  you.vz = 0
+  for (let i = 0; i < 10; i++) step(w, 1 / 30, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
+  const speed = Math.hypot(you.vx, you.vz)
+  if (speed < 2.1) throw new Error(`swim should reach a crisp speed quickly, got ${speed.toFixed(2)}`)
+  for (let i = 0; i < 8; i++) step(w, 1 / 30, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 0 })
+  const rest = Math.hypot(you.vx, you.vz)
+  if (rest > 0.35) throw new Error(`swim should brake with little drift, leftover ${rest.toFixed(2)}`)
+  console.log('crisp swim accel and brake', speed.toFixed(2), 'then', rest.toFixed(2))
+}
+
+{
+  const w = createWorld()
+  const you = playerOf(w)
+  you.ep = 20
+  const buy = applyMorphBuy(you, 'lungs')
+  if (!buy.ok) throw new Error(`lungs for jump test: ${buy.reason}`)
+  you.x = 110
+  you.z = 0
+  you.y = groundAt(110, 0, 16) + 0.16
+  you.vx = 0
+  you.vy = 0
+  you.vz = 0
+  for (let i = 0; i < 8; i++) step(w, 1 / 30, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 0 })
+  step(w, 1 / 30, { ax: 0, ay: 0, jump: true, bite: false, dig: false, use: false, ink: false, forward: 0 })
+  if (you.vy < 4) throw new Error(`land jump should leave the raised plateau, vy=${you.vy.toFixed(2)} y=${you.y.toFixed(2)}`)
+  console.log('land jump works on the raised plateau', you.vy.toFixed(2))
+}
+
+{
+  const w = createWorld()
+  const you = playerOf(w)
+  const tree = w.nodes.find((n) => n.kind === 'tree' && (n.rad ?? 0) > 0.14 && isDryLand(n.x, n.z ?? 0) && n.x > 90)
+  if (!tree) throw new Error('expected a land tree to test slide-along')
+  you.ep = 20
+  applyMorphBuy(you, 'lungs')
+  // Glance in from a slight offset so a hard stop would pin us, but a slide should carry us past.
+  you.x = tree.x - (tree.rad! + 1.2)
+  you.z = (tree.z ?? 0) + tree.rad! * 0.55
+  you.y = groundAt(you.x, you.z, 16) + 0.16
+  you.vx = 0
+  you.vy = 0
+  you.vz = 0
+  you.yaw = 0
+  for (let i = 0; i < 40; i++) {
+    you.yaw = 0
+    step(w, 1 / 30, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
+  }
+  if (you.x < tree.x + 0.2) throw new Error(`glancing land collision should slide past the trunk, end x=${you.x.toFixed(2)} tree=${tree.x.toFixed(2)} rad=${tree.rad}`)
+  console.log('slide along tree trunks')
+}
+
+{
+  const w = createWorld()
+  const you = playerOf(w)
+  const nearShore = w.nodes.find((n) => (n.kind === 'tree' || n.kind === 'rock') && (n.rad ?? 0) > 0.14 && n.x > 68 && n.x < 80)
+  if (nearShore) {
+    you.x = nearShore.x
+    you.z = nearShore.z ?? 0
+    you.y = Math.min(3.2, WATER - 0.8)
+    you.vx = 0
+    you.vy = 0
+    you.vz = 0
+    you.yaw = Math.PI / 2
+    const z0 = you.z
+    for (let i = 0; i < 24; i++) {
+      you.yaw = Math.PI / 2
+      step(w, 1 / 30, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
+    }
+    if (you.z < z0 + 1.2) throw new Error(`swimming along the shore should not be pinned by a land collider at (${nearShore.x.toFixed(1)}, ${nearShore.z}) end z=${you.z.toFixed(2)}`)
+  }
+  console.log('shoreline trees and rocks do not block swimming')
+}
+
+{
+  const dirs: [string, number][] = [['+x', 0], ['-x', Math.PI], ['+z', Math.PI / 2], ['-z', -Math.PI / 2]]
+  const blocked: string[] = []
+  let tests = 0
+  let shoreGates = 0
+  const run = (land: boolean, xs: number[], zs: number[]) => {
+    const w = createWorld()
+    const you = playerOf(w)
+    if (land) {
+      you.ep = 20
+      applyMorphBuy(you, 'lungs')
+    }
+    const dt = 1 / 30
+    const frames = 24
+    const expected = 3.0 * dt * frames * 0.45
+    for (const x0 of xs) {
+      for (const z0 of zs) {
+        for (const [name, yaw] of dirs) {
+          tests++
+          you.alive = true
+          you.hp = you.maxHp
+          you.stun = 0
+          you.slow = 0
+          you.iframes = 8
+          you.air = 20
+          you.x = x0
+          you.z = z0
+          you.y = land || isDryLand(x0, z0) ? groundAt(x0, z0, 16) + 0.2 : Math.min(3.2, WATER - 0.8)
+          you.vx = 0
+          you.vy = 0
+          you.vz = 0
+          you.yaw = yaw
+          for (let i = 0; i < frames; i++) {
+            you.yaw = yaw
+            step(w, dt, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
+          }
+          const dx = you.x - x0
+          const dz = you.z - z0
+          const along = dx * Math.cos(yaw) + dz * Math.sin(yaw)
+          const moved = Math.hypot(dx, dz)
+          if (along >= expected * 0.35 || moved >= expected) continue
+          const edge = you.x <= 3 || you.x >= 478 || Math.abs(you.z) >= 178
+          const shoreStop = !land && (isDryLand(you.x, you.z) || (you.x >= shoreX(you.z) - 0.6 && Math.cos(yaw) > 0.4))
+          const hitSolid = w.nodes.some((n) => (n.kind === 'tree' || n.kind === 'rock') && (n.rad ?? 0) >= 0.14 && n.amount > 0 && (
+            Math.hypot(n.x - x0, (n.z ?? 0) - z0) < (n.rad! + 1.3)
+            || Math.hypot(n.x - you.x, (n.z ?? 0) - you.z) < (n.rad! + 0.8)
+          ))
+          if (edge) continue
+          if (shoreStop) {
+            shoreGates++
+            continue
+          }
+          if (hitSolid) continue
+          blocked.push(`${land ? 'land' : 'water'} ${name} from ${x0},${z0} -> ${you.x.toFixed(1)},${you.z.toFixed(1)} moved ${moved.toFixed(2)}`)
+        }
+      }
+    }
+  }
+  run(false, [8, 20, 36, 50, 58, 66, 72], [-72, -48, -24, 0, 24, 48, 72])
+  run(true, [80, 92, 108, 124, 140], [-72, -48, -24, 0, 24, 48, 72])
+  if (blocked.length) throw new Error(`unexplained movement blocks (${blocked.length}/${tests}): ${blocked.slice(0, 8).join(' | ')}`)
+  console.log('traversal grid has no unexplained blocks', tests, 'cells, shore gates', shoreGates)
 }

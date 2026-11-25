@@ -175,17 +175,20 @@ export function scatterChunk(
   return { trees, rocks, plants, berries }
 }
 
-/** Visual trunk or rock radius at the given instance scale, used for body collision. */
+/** Visual trunk or rock radius at the given instance scale, used for body collision.
+ *  Tree geos are also scaled 2.05× in landflora; rock geos are not. Stay slightly under the mesh.
+ *  Pebbles and other small debris have no collider. */
 export function trunkRadius(kind: string, scale: number): number {
-  const base =
+  if (kind === 'pebble') return 0
+  const tree =
     kind === 'baobab' ? 0.36
     : kind === 'redwood' ? 0.24
     : kind === 'cedar' || kind === 'oak' || kind === 'cottonwood' ? 0.16
     : kind === 'cycad' ? 0.22
-    : kind === 'boulder' ? 0.5
-    : kind === 'outcrop' ? 0.48
-    : kind === 'pebble' ? 0
+    : kind === 'boulder' || kind === 'outcrop' ? 0
     : 0.12
-  if (base <= 0) return 0
-  return Math.max(0.22, base * scale * 0.9)
+  if (kind === 'boulder') return Math.max(0.16, 0.62 * scale * 0.78)
+  if (kind === 'outcrop') return Math.max(0.16, 0.7 * scale * 0.72)
+  if (tree <= 0) return 0
+  return Math.max(0.14, tree * scale * 2.05 * 0.72)
 }
