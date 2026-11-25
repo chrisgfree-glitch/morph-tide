@@ -563,7 +563,7 @@ export class Game {
       if (isTypingTarget(e.target)) return
       if (this.playing) e.preventDefault()
     })
-    const nodes = document.querySelectorAll('canvas, #stick, #t-bite, #t-up, #t-dive, #t-dash, #t-horn, #t-act, #t-build, #t-evo')
+    const nodes = [this.renderer.domElement, ...document.querySelectorAll('#stick, #t-bite, #t-up, #t-dive, #t-dash, #t-horn, #t-act, #t-build, #t-evo')]
     nodes.forEach((el) => {
       el.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false })
       el.addEventListener('pointerdown', (e) => {
@@ -1868,8 +1868,7 @@ export class Game {
     you.pitch = this.pitch
     const fwd = Math.max(-1, Math.min(1, moveF))
     const ax = Math.max(-1, Math.min(1, moveS))
-    const lookClimb = Math.max(-1, Math.min(1, Math.sin(this.pitch) * 1.25))
-    const ay = jump ? 1 : dive ? -1 : lookClimb
+    const ay = jump ? 1 : dive ? -1 : 0
     const ease = 1 - Math.exp(-dt * 22)
     this.sAx += (ax - this.sAx) * ease
     this.sAy += (fwd - this.sAy) * ease
@@ -1884,7 +1883,7 @@ export class Game {
     return {
       ax: this.sAx,
       ay,
-      jump: jump || (!dive && lookClimb > 0.2),
+      jump,
       bite,
       dig: k.has('f') || dig,
       use: k.has('g') || use,
@@ -1892,7 +1891,7 @@ export class Game {
       dash: this.dashT > 0.12 || this.gp.dash,
       horn: this.hornT > 0.1 || this.gp.horn,
       forward: this.sAy,
-      dive: dive || (!jump && lookClimb < -0.2),
+      dive,
       sprint,
     }
   }

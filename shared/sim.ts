@@ -736,12 +736,10 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   const strafe = you.stun > 0 ? 0 : Math.max(-1, Math.min(1, input.ax))
   // Explicit rise (Space / A / RB / Rise) must win over look-down auto-dive.
   const rise = input.jump ? 1 : input.dive ? -1 : input.ay !== 0 ? input.ay : 0
-  const pitch = submerged ? you.pitch : 0
-  const cp = Math.cos(pitch)
-  const sp = Math.sin(pitch)
   const yaw = you.yaw
-  const wishX = Math.cos(yaw) * fwd * cp - Math.sin(yaw) * strafe
-  const wishZ = Math.sin(yaw) * fwd * cp + Math.cos(yaw) * strafe
+  // Stick and look stay in the horizontal plane. Only Rise / Dive change depth.
+  const wishX = Math.cos(yaw) * fwd - Math.sin(yaw) * strafe
+  const wishZ = Math.sin(yaw) * fwd + Math.cos(yaw) * strafe
   you.facing = Math.cos(yaw) >= 0 ? 1 : -1
   if (submerged) {
     const sprint = input.sprint ? 1.32 : 1
@@ -749,7 +747,7 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     const accel = (32 / Math.sqrt(box.mass)) * agility(morphOf(you.load)).accel
     const brake = Math.max(accel * 1.8, 28)
     const idle = Math.abs(fwd) < 0.08 && Math.abs(strafe) < 0.08 && Math.abs(rise) < 0.08
-    const climb = fwd * sp + rise * 0.85
+    const climb = rise * 0.85
     const ty = idle ? -0.16 / box.mass : climb * maxV * 0.7
     you.vx = approach(you.vx, wishX * maxV, idle ? brake : accel, dt)
     you.vz = approach(you.vz, wishZ * maxV, idle ? brake : accel, dt)
@@ -797,7 +795,7 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
   if (input.horn && you.windup <= 0 && you.recover <= 0) {
     you.heavy = true
     you.windup = 0.08
-    const lunge = 4.5 / Math.sqrt(box.mass)
+    const lunge = 2.2 / Math.sqrt(box.mass)
     you.vx += Math.cos(you.yaw) * lunge
     you.vz += Math.sin(you.yaw) * lunge
     you.biteT = 0.2
@@ -1003,15 +1001,13 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
       const limit = young ? 1.2 : 0.9
       if (Math.abs(turn) < limit) you.yaw += turn * (young ? (pressed ? 0.88 : 0.35) : 0.45)
       if (pressed && young && dist < 2.8 && Math.abs(turn) < 1.2) {
-        const pull = Math.min(0.55, 0.2 + (2.8 - dist) * 0.18)
-        you.x += Math.cos(you.yaw) * pull * 0.45 + (aim.x - you.x) * 0.16
-        you.z += Math.sin(you.yaw) * pull * 0.45 + (aim.z - you.z) * 0.16
-        you.y += (aim.y - you.y) * 0.22
+        const pull = Math.min(0.28, 0.1 + (2.8 - dist) * 0.1)
+        you.x += Math.cos(you.yaw) * pull * 0.45 + (aim.x - you.x) * 0.1
+        you.z += Math.sin(you.yaw) * pull * 0.45 + (aim.z - you.z) * 0.1
       }
-      const lunge = pressed ? (young ? 7.4 : 6.2) : (young ? 1.6 : 1.2)
+      const lunge = pressed ? (young ? 3.2 : 2.6) : (young ? 0.8 : 0.6)
       you.vx += Math.cos(you.yaw) * lunge
       you.vz += Math.sin(you.yaw) * lunge
-      if (pressed) you.vy += Math.max(-2.4, Math.min(2.4, (aim.y - you.y) * 2.2))
     }
     if (input.bite || you.biteBuf > 0) ev.push({ t: 'bite', x: you.x, y: you.y, text: '' })
   }

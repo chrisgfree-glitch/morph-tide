@@ -203,7 +203,7 @@ if ((pup.bag.kelp ?? 0) !== 0 || (pup.bag.sticks ?? 0) !== 0 || (pup.bag.stone ?
 }
 if (pup.load.lungs !== 0 || pup.load.legs !== 0 || pup.load.armor !== 0) throw new Error('new guppy should have no grown parts')
 const pupBite = compute(pup.load, pup.spent).bite
-if (pupBite > 3) throw new Error(`guppy bite should stay capped, got ${pupBite}`)
+if (pupBite < 1.8 || pupBite > 2.2) throw new Error(`guppy bite should start around 2, got ${pupBite}`)
 const pupScale = bodyScale(pup.load, pup.spent)
 const oldStarter = starterLoad()
 oldStarter.size = 0.92
@@ -373,10 +373,10 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
   if (!snack) throw new Error('expected nearby fry')
   const dmg = compute(gup.load, gup.spent).bite
   const nips = Math.ceil(snack.hp / dmg)
-  if (nips < 1 || nips > 2) throw new Error(`first meal should take 1-2 bites, got ${nips} (hp ${snack.hp} bite ${dmg})`)
+  if (nips < 1 || nips > 3) throw new Error(`first meal should take 1-3 bites with the weaker start, got ${nips} (hp ${snack.hp} bite ${dmg})`)
   const later = w.ents.find((e) => e.kind === 'npc' && e.region === 'sea' && e.bias > 0)
   if (later && later.maxHp <= 3) throw new Error('later sea prey should keep mid-game health')
-  console.log('first meal takes 1-2 bites')
+  console.log('first meal takes 1-3 bites')
 }
 
 
@@ -828,6 +828,57 @@ console.log('all checks ok')
   if (you.y <= near) throw new Error(`repeated rise near the surface should still work, y ${near.toFixed(2)} -> ${you.y.toFixed(2)}`)
   console.log('rise climbs mid-water, beats auto-dive, and works near the surface', you.y.toFixed(2))
 }
+
+{
+  const w = createWorld()
+  const you = playerOf(w)
+  you.x = 8
+  you.y = 2.4
+  you.z = 0
+  you.vx = 0
+  you.vy = 0
+  you.vz = 0
+  you.pitch = 0.85
+  you.yaw = 0
+  const y0 = you.y
+  const rest = { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, dash: false, horn: false, forward: 0, dive: false }
+  for (let i = 0; i < 36; i++) step(w, 1 / 60, { ...rest, ax: 1, forward: 1 })
+  const dy = you.y - y0
+  if (Math.abs(dy) > 0.35) throw new Error(`stick-forward should stay mostly level, dy ${dy.toFixed(3)}`)
+  if (you.x <= 8.6) throw new Error(`stick-forward should still move ahead, x ${you.x}`)
+  console.log('stick-forward stays mostly level even with a steep look pitch')
+}
+
+{
+  const w = createWorld()
+  const you = playerOf(w)
+  you.x = 10
+  you.y = 2.4
+  you.z = 0
+  you.vx = 0
+  you.vy = 0
+  you.vz = 0
+  you.pitch = 0.7
+  you.yaw = 0
+  const snack = w.ents.find((e) => e.kind === 'npc' && e.alive && e.region === 'sea')
+  if (!snack) throw new Error('expected a sea snack for the lunge test')
+  snack.x = you.x + 2.4
+  snack.y = you.y + 1.6
+  snack.z = you.z
+  const y0 = you.y
+  const x0 = you.x
+  const rest = { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, dash: false, horn: false, forward: 0, dive: false }
+  step(w, 1 / 60, { ...rest, bite: true })
+  const dy = you.y - y0
+  const dx = you.x - x0
+  const speed = Math.hypot(you.vx, you.vz)
+  if (Math.abs(dy) > 0.28) throw new Error(`attack lunge should stay mostly horizontal, dy ${dy.toFixed(3)}`)
+  if (dx > 0.9) throw new Error(`attack lunge should be shorter, dx ${dx.toFixed(3)}`)
+  if (speed > 4.2) throw new Error(`attack lunge should be slower, speed ${speed.toFixed(3)}`)
+  if (dx < 0.02 && speed < 0.4) throw new Error(`attack should still lunge forward a little, dx ${dx.toFixed(3)} speed ${speed.toFixed(3)}`)
+  console.log('attack lunge is shorter and mostly horizontal')
+}
+
 
 {
   const w = createWorld()
