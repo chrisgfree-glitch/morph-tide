@@ -2465,6 +2465,21 @@ export function mount(): Game | null {
     place: () => game['confirmPlace'](),
     pickup: () => game['pickupPiece'](),
     cycle: (dir: number) => game['cyclePiece'](dir),
+    tick: (dt = 1 / 30, input: Partial<Frame> = {}) => {
+      const ev = step(game.world, Math.max(0, Math.min(0.05, dt)), {
+        ax: 0,
+        ay: 0,
+        jump: false,
+        bite: false,
+        dig: false,
+        use: false,
+        ink: false,
+        forward: 0,
+        ...input,
+      })
+      const you = playerOf(game.world)
+      return { ev, x: you.x, y: you.y, z: you.z, banner: game.world.banner, bossUnlocked: game.world.bossUnlocked }
+    },
   }
   ;(window as unknown as { evo: typeof api }).evo = api
   return game
