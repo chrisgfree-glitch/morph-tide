@@ -533,4 +533,44 @@ function fakePad(pressed: number[] = [], axes = [0, 0, 0, 0], values: Record<num
   console.log('lungs unlock land, Boss unlocked, and a playthrough reaches x>128')
 }
 
+{
+  const w = createWorld()
+  const you = playerOf(w)
+  you.ep = 16
+  you.x = 70
+  you.y = 1.2
+  const buy = applyMorphBuy(you, 'lungs')
+  if (!buy.ok) throw new Error(`lungs buy failed: ${buy.reason}`)
+  step(w, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 0 })
+  const boss = w.ents.find((e) => e.kind === 'boss' && e.alive)
+  if (!boss) throw new Error('boss should be present for melee check')
+  you.x = boss.x - 2
+  you.y = boss.y
+  you.z = boss.z
+  you.yaw = 0
+  step(w, 0.16, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 0 })
+  if (you.x < boss.x - 3) throw new Error(`player should be able to step into melee, got x=${you.x} vs boss ${boss.x}`)
+  const hp0 = boss.hp
+  you.x = boss.x - 1.6
+  you.y = boss.y
+  you.z = boss.z
+  you.yaw = 0
+  you.biteCd = 0
+  you.windup = 0
+  you.recover = 0
+  you.stun = 0
+  for (let i = 0; i < 8; i++) {
+    you.biteCd = 0
+    you.windup = 0
+    you.recover = 0
+    step(w, 0.12, { ax: 0, ay: 0, jump: false, bite: true, dig: false, use: false, ink: false, forward: 0 })
+  }
+  if (boss.hp >= hp0) throw new Error(`guppy should be able to bite the Colossus in melee, hp ${hp0} -> ${boss.hp}`)
+  you.x = boss.x + 6
+  step(w, 0.2, { ax: 0, ay: 0, jump: false, bite: false, dig: false, use: false, ink: false, forward: 1 })
+  if (you.x > boss.x + 2.05) throw new Error(`living Colossus should still bar the inland, got x=${you.x}`)
+  console.log('Colossus is fightable in melee and still bars passage inland')
+}
+
+
 console.log('all checks ok')

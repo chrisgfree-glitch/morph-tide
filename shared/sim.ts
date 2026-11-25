@@ -790,8 +790,8 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     if (you.x >= 66) you.vx = Math.min(you.vx, 0)
   }
   const colossus = w.ents.find((e) => e.kind === 'boss' && e.alive)
-  if (colossus && you.x > colossus.x - 5 && you.x < colossus.x + 6) {
-    you.x = colossus.x - 5
+  if (colossus && you.x > colossus.x + 2 && you.x < colossus.x + 20) {
+    you.x = colossus.x + 2
     you.vx = Math.min(you.vx, 0)
     if (w.bannerT <= 0.4) {
       w.banner = 'The Strand Colossus bars the inland.'
@@ -882,7 +882,9 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
     you.biteT = you.windup + 0.18
     you.biteCd = 0.04
     const aim = nearestInCone(w, you)
-    if (aim) {
+    const bossUp = w.ents.find((e) => e.kind === 'boss' && e.alive)
+    const huntAssist = !!(aim && !(bossUp && you.x >= 60 && aim.kind !== 'boss' && !input.bite))
+    if (aim && huntAssist) {
       const young = you.kind === 'player' && youngBite(you.load, you.spent)
       const dx = aim.x - you.x
       const dz = aim.z - you.z

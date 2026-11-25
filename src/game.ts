@@ -1803,7 +1803,9 @@ export class Game {
     }
     if (bite || this.lockId) {
       const aim = lock ?? nearestInCone(this.world, you)
-      if (aim) {
+      const bossUp = this.world.ents.find((e) => e.kind === 'boss' && e.alive)
+      const ignoreSeaward = !!(bossUp && you.x >= 60 && aim && aim.kind !== 'boss' && !this.lockId)
+      if (aim && !ignoreSeaward) {
         const adx = aim.x - you.x
         const adz = aim.z - you.z
         const want = Math.atan2(adz, adx)
@@ -2469,19 +2471,23 @@ export function mount(): Game | null {
 }
 
 function earlyGoal(w: World, you: Ent, fallback: string): string {
+  if (!canGoAshore(you.load)) {
+    if (you.x >= 58 || you.ep >= 10) {
+      return you.ep < 10
+        ? 'Earn 10 EP, then buy Lungs in Evolve (Select) to go ashore'
+        : 'Buy Lungs in Evolve (Select) — or octopus land limbs — to go ashore'
+    }
+  } else {
+    const boss = w.ents.find((e) => e.kind === 'boss')
+    if (w.bossUnlocked && boss?.alive) {
+      const dist = Math.max(0, Math.round(Math.hypot(boss.x - you.x, (boss.z ?? 0) - you.z)))
+      return dist > 8 ? `Boss unlocked — follow the marker inland (${dist})` : 'Fight the Strand Colossus'
+    }
+    if (w.bossUnlocked && !boss?.alive) return w.gateOpen ? 'The inland is open. Keep growing.' : 'The Strand Colossus has fallen'
+    if (you.x < 66) return 'Go ashore and follow the marker inland to the first boss'
+  }
   const guppy = you.spent < 12 && you.load.legs === 0 && you.load.size <= 0.55
   if (guppy && w.eats < 5) return `Eat 5 fish (${w.eats}/5)`
-  if (!canGoAshore(you.load)) {
-    if (you.ep < 10) return 'Earn 10 EP, then buy Lungs in Evolve (Select) to go ashore'
-    return 'Buy Lungs in Evolve (Select) — or octopus land limbs — to go ashore'
-  }
-  const boss = w.ents.find((e) => e.kind === 'boss')
-  if (w.bossUnlocked && boss?.alive) {
-    const dist = Math.max(0, Math.round(Math.hypot(boss.x - you.x, (boss.z ?? 0) - you.z)))
-    return dist > 8 ? `Boss unlocked — follow the marker inland (${dist})` : 'Fight the Strand Colossus'
-  }
-  if (w.bossUnlocked && !boss?.alive) return w.gateOpen ? 'The inland is open. Keep growing.' : 'The Strand Colossus has fallen'
-  if (you.x < 66) return 'Go ashore and follow the marker inland to the first boss'
   return fallback
 }
 
