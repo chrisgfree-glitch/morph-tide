@@ -910,6 +910,18 @@ export function step(w: World, dt: number, input: Frame): Evt[] {
       if (fx.pierce) dmg *= 1.25
       dmg = Math.max(1, Math.round(dmg))
       hurt(foe, dmg)
+      if (foe.species === 'puffer') {
+        you.burn = Math.max(you.burn, 3.5)
+        ev.push({ t: 'hurt', x: you.x, y: you.y, text: 'Poisoned!' })
+      } else if (foe.species === 'zapeel') {
+        hurt(you, 4)
+        you.stun = Math.max(you.stun, 0.6)
+        ev.push({ t: 'hurt', x: you.x, y: you.y, text: 'Zapped!' })
+      } else if (foe.species === 'firejelly') {
+        hurt(you, 3)
+        you.burn = Math.max(you.burn, 2)
+        ev.push({ t: 'hurt', x: you.x, y: you.y, text: 'Stung!' })
+      }
       const knock = (heavy ? 5.4 : 3.4) * box.mass * (fx.knock || fx.slam || fx.slap ? 1.55 : 1)
       foe.vx = Math.cos(you.yaw) * knock
       foe.vz = Math.sin(you.yaw) * knock

@@ -61,6 +61,22 @@ export const PREY_KINDS: PreyKind[] = [
   { id: 'dart', name: 'Kelp dart', species: 'needle', region: 'sea', bias: 2, hp: 8, spent: 200, size: 0.55 },
   { id: 'bell', name: 'Ghost bell', species: 'bell', region: 'sea', bias: 6, hp: 12, spent: 400, size: 0.7 },
   { id: 'platebug', name: 'Plate bug', species: 'plate', region: 'sea', bias: 10, hp: 18, spent: 600, size: 0.8 },
+  // Chris's ocean roster: safe food, watch-outs, and sharks to flee
+  { id: 'krill', name: 'Krill swarm', species: 'krill', region: 'sea', bias: 0, hp: 2, spent: 0, size: 0.26 },
+  { id: 'babyshrimp', name: 'Baby shrimp', species: 'shrimp', region: 'sea', bias: 0, hp: 3, spent: 0, size: 0.3 },
+  { id: 'sardine', name: 'Sardine', species: 'sardine', region: 'sea', bias: 0, hp: 4, spent: 0, size: 0.4 },
+  { id: 'snail', name: 'Sea snail', species: 'snail', region: 'sea', bias: 0, hp: 5, spent: 0, size: 0.34 },
+  { id: 'darter', name: 'Reef darter', species: 'darter', region: 'sea', bias: 0, hp: 4, spent: 0, size: 0.36 },
+  { id: 'babysquid', name: 'Baby squid', species: 'squid', region: 'sea', bias: 1, hp: 6, spent: 100, size: 0.42 },
+  { id: 'puffer', name: 'Pufferfish', species: 'puffer', region: 'sea', bias: 1, hp: 10, spent: 200, size: 0.6 },
+  { id: 'blueeel', name: 'Blue eel', species: 'blueeel', region: 'sea', bias: 1, hp: 10, spent: 200, size: 0.6 },
+  { id: 'zapeel', name: 'Electric eel', species: 'zapeel', region: 'sea', bias: 1, hp: 14, spent: 300, size: 0.7 },
+  { id: 'moonjelly', name: 'Moon jelly', species: 'moonjelly', region: 'sea', bias: 0, hp: 4, spent: 0, size: 0.4 },
+  { id: 'firejelly', name: 'Fire jelly', species: 'firejelly', region: 'sea', bias: 1, hp: 12, spent: 300, size: 0.8 },
+  { id: 'bigsquid', name: 'Big squid', species: 'squid', region: 'sea', bias: 8, hp: 24, spent: 600, size: 1.1 },
+  { id: 'reefshark', name: 'Reef shark', species: 'shark', region: 'sea', bias: 30, hp: 60, spent: 2500, size: 2.0 },
+  { id: 'hammerhead', name: 'Hammerhead', species: 'hammer', region: 'sea', bias: 45, hp: 90, spent: 4500, size: 2.5 },
+  { id: 'greatshark', name: 'Great shark', species: 'shark', region: 'sea', bias: 80, hp: 160, spent: 8000, size: 3.4 },
   { id: 'crab', name: 'Shore crab', species: 'crab', region: 'land', bias: 0, hp: 8, spent: 200, size: 0.55 },
   { id: 'beetle', name: 'Amber beetle', species: 'beetle', region: 'land', bias: 2, hp: 10, spent: 250, size: 0.58 },
   { id: 'newt', name: 'Reed newt', species: 'newt', region: 'land', bias: 1, hp: 9, spent: 200, size: 0.56 },
@@ -146,6 +162,26 @@ export function createSpawners(): Spawner[] {
       out.push(spawner(`mix-speck-${x}-${z}`, 'speck', x, 2.3, z, 12, 8, 14, 1.5, 38, 7, 'sea'))
     }
   }
+  // New roster: food everywhere, watch-outs scattered, 3 sharks on wide patrols
+  const roster: [string, number, number, number, number][] = [
+    ['krill', 2.0, 10, 14, 1.2], ['babyshrimp', 2.2, 8, 12, 1.4], ['sardine', 3.0, 6, 10, 1.6], ['snail', 0.9, 4, 7, 2.2],
+    ['darter', 2.6, 6, 10, 1.6], ['moonjelly', 3.6, 3, 6, 2.6], ['babysquid', 3.2, 3, 6, 2.6], ['puffer', 2.4, 2, 4, 3.4],
+    ['blueeel', 1.4, 2, 4, 3.4], ['zapeel', 1.4, 1, 3, 4.2], ['firejelly', 3.8, 2, 4, 3.6], ['bigsquid', 3.4, 1, 2, 6],
+  ]
+  let k = 0
+  for (const x of [12, 36, 58]) {
+    for (const z of [-66, -33, 0, 33, 66]) {
+      for (let n = 0; n < 4; n++) {
+        const [id, y, mn, mx, rs] = roster[k % roster.length]!
+        out.push(spawner(`${id}-${x}-${z}-${n}`, id, x + ((k * 13) % 9) - 4, y, z + ((k * 7) % 11) - 5, 12, mn, mx, rs, 60, 4, 'sea'))
+        k++
+      }
+    }
+  }
+  out.push(spawner('reefshark-a', 'reefshark', 30, 3.2, -45, 30, 1, 1, 40, 999, 0, 'sea'))
+  out.push(spawner('hammerhead-a', 'hammerhead', 44, 3.4, 40, 30, 1, 1, 60, 999, 0, 'sea'))
+  out.push(spawner('greatshark-a', 'greatshark', 56, 3.6, 0, 36, 1, 1, 90, 999, 0, 'sea'))
+
   const landKinds: { id: string; min: number; max: number; respawn: number; bloomEvery: number; bloomN: number }[] = [
     { id: 'crab', min: 6, max: 10, respawn: 2.6, bloomEvery: 55, bloomN: 4 },
     { id: 'beetle', min: 5, max: 9, respawn: 2.8, bloomEvery: 58, bloomN: 4 },

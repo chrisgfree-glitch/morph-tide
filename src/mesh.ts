@@ -926,6 +926,15 @@ export function preyInstanceGeo(species: string): THREE.BufferGeometry {
     geo.scale(sx, sy, sz)
     return geo
   }
+  if (species === 'krill') return ball(1.4, 0.5, 0.5, 0.16)
+  if (species === 'sardine' || species === 'darter') return ball(1.9, 0.6, 0.45, 0.22)
+  if (species === 'snail') return ball(1, 0.9, 1, 0.22)
+  if (species === 'squid') return ball(2.0, 0.6, 0.6, 0.24)
+  if (species === 'puffer') return ball(1.1, 1.05, 1.05, 0.3)
+  if (species === 'blueeel' || species === 'zapeel') return ball(3.4, 0.38, 0.38, 0.22)
+  if (species === 'moonjelly' || species === 'firejelly') return ball(1, 0.7, 1, 0.3)
+  if (species === 'shark') return ball(2.8, 0.75, 0.7, 0.3)
+  if (species === 'hammer') return ball(2.8, 0.7, 1.1, 0.3)
   if (species === 'bell') return ball(1, 1.15, 1, 0.28)
   if (species === 'plate' || species === 'platebug') return ball(1.15, 0.7, 1.15, 0.3)
   if (species === 'crab') return ball(1.5, 0.45, 1.35, 0.26)
@@ -940,6 +949,8 @@ export function preyInstanceGeo(species: string): THREE.BufferGeometry {
 
 export const PREY_TINT: Record<string, number> = {
   shrimp: 0xc4a090,
+  krill: 0xe89a8a, sardine: 0xb8c8d4, snail: 0xa88a6a, darter: 0xf09a3a, squid: 0xd88aa0, puffer: 0xd8c070,
+  blueeel: 0x3a6ad0, zapeel: 0xf2e030, moonjelly: 0xdcd4f0, firejelly: 0xe23a2a, shark: 0x6a7a88, hammer: 0x5a6a74,
   needle: 0x7f97a0,
   bell: 0xb89ad0,
   plate: 0x8a7d62,
