@@ -40,8 +40,21 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,webp,woff,woff2,webmanifest}'],
-        navigateFallback: '/index.html',
+        // Don't precache HTML/JS/CSS with cache-first; network-first so new deploys show up.
+        globPatterns: ['**/*.{svg,png,webp,woff,woff2,webmanifest}'],
+        cleanupOutdatedCaches: true,
+        runtimeCaching: [
+          {
+            urlPattern: ({ request, sameOrigin }) => sameOrigin && request.method === 'GET',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'morph-tide-shell-v2',
+              networkTimeoutSeconds: 4,
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 7 },
+            },
+          },
+        ],
       },
     }),
   ],
