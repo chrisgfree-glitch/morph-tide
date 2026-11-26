@@ -43,6 +43,7 @@ export default defineConfig({
         // Don't precache HTML/JS/CSS with cache-first; network-first so new deploys show up.
         globPatterns: ['**/*.{svg,png,webp,woff,woff2,webmanifest}'],
         cleanupOutdatedCaches: true,
+        navigateFallback: '',
         runtimeCaching: [
           {
             urlPattern: ({ request, sameOrigin }) => sameOrigin && request.method === 'GET',
